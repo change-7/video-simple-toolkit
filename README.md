@@ -24,12 +24,12 @@ macOS Apple Silicon 전용 SwiftUI 앱입니다. `yt-dlp`와 `ffmpeg`를 앱 내
 
 ## 실행
 Xcode:
-- `/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj` 열기
+- `YouTubeDownloader.xcodeproj` 열기
 - `YouTubeDownloader` 스킴 실행
 
 CLI:
 ```bash
-xcodebuild -project "/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj" \
+xcodebuild -project "YouTubeDownloader.xcodeproj" \
   -scheme "YouTubeDownloader" \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' build
@@ -37,7 +37,7 @@ xcodebuild -project "/Users/pdg/Documents/유튜브 다운ᄅ�
 
 ## 테스트
 ```bash
-xcodebuild test -project "/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj" \
+xcodebuild test -project "YouTubeDownloader.xcodeproj" \
   -scheme "YouTubeDownloader" \
   -destination 'platform=macOS,arch=arm64'
 ```
@@ -56,7 +56,7 @@ DMG:
 ./Scripts/create_dmg.sh
 ```
 
-GitHub Releases 업로드 흐름은 `/Users/pdg/Documents/유튜브 다운로더/RELEASING.md` 참고.
+GitHub Releases 업로드 흐름은 `RELEASING.md` 참고.
 
 ## 구조
 - `Managers/ToolManager.swift`

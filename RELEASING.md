@@ -8,7 +8,7 @@ GitHub Releases에 올릴 DMG를 만드는 최소 흐름입니다.
 ```
 
 산출물:
-- `/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.app`
+- `YouTubeDownloader.app`
 
 ## 2. DMG 생성
 ```bash
@@ -16,7 +16,7 @@ GitHub Releases에 올릴 DMG를 만드는 최소 흐름입니다.
 ```
 
 산출물:
-- `/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader-AppleSilicon.dmg`
+- `YouTubeDownloader-AppleSilicon.dmg`
 
 ## 3. 선택: 서명 / 노타리제이션
 Developer ID 인증서와 notarytool 프로필이 있으면:
@@ -36,7 +36,7 @@ GitHub 저장소의 Releases 화면에서:
 2. 태그 입력 예: `v0.1.0`
 3. 제목 입력
 4. `YouTubeDownloader-AppleSilicon.dmg` 업로드
-5. 릴리스 노트는 `/Users/pdg/Documents/유튜브 다운로더/Scripts/RELEASE_NOTES.md` 참고
+5. 릴리스 노트는 `Scripts/RELEASE_NOTES.md` 참고
 
 ## 체크
 - Debug 앱이 아닌 Release 앱인지 확인

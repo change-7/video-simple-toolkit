@@ -11,10 +11,10 @@
 - External runtime dependency: `/opt/homebrew/bin/yt-dlp`, `/opt/homebrew/bin/ffmpeg`, optional `/opt/homebrew/bin/ffprobe`
 
 ## Run
-- Open `/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj` in Xcode and run the `YouTubeDownloader` scheme.
+- Open `YouTubeDownloader.xcodeproj` in Xcode and run the `YouTubeDownloader` scheme.
 - CLI build:
 ```bash
-xcodebuild -project "/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj" \
+xcodebuild -project "YouTubeDownloader.xcodeproj" \
   -scheme "YouTubeDownloader" \
   -configuration Release \
   -destination 'platform=macOS,arch=arm64' build
@@ -23,7 +23,7 @@ xcodebuild -project "/Users/pdg/Documents/유튜브 다운ᄅ�
 ## Test
 - CLI test:
 ```bash
-xcodebuild test -project "/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.xcodeproj" \
+xcodebuild test -project "YouTubeDownloader.xcodeproj" \
   -scheme "YouTubeDownloader" \
   -destination 'platform=macOS,arch=arm64'
 ```

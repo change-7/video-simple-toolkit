@@ -7,7 +7,7 @@
 - Moved success validation work off the main thread.
 - Changed `ffprobe` validation failure to fail the download instead of marking it complete.
 - Reduced wasted state and log buffering overhead in `DownloadManager` and `ToolManager`.
-- Release build succeeded and root app bundle was refreshed: `/Users/pdg/Documents/유튜브 다운로더/YouTubeDownloader.app`
+- Release build succeeded and root app bundle was refreshed: `YouTubeDownloader.app`
 
 ## In progress
 - Test execution is not fully verified in this environment.
@@ -25,10 +25,10 @@
 4. If requested, refresh `/Applications/YouTubeDownloader.app` and rebuild the DMG.
 
 ## Related files
-- `/Users/pdg/Documents/유튜브 다운로더/Managers/DownloadManager.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Managers/ToolManager.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Utilities/DownloadLineHeuristics.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Views/MainView.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Views/ToolsView.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Models/ToolModels.swift`
-- `/Users/pdg/Documents/유튜브 다운로더/Tests/YouTubeDownloaderTests/DownloadLineHeuristicsTests.swift`
+- `Managers/DownloadManager.swift`
+- `Managers/ToolManager.swift`
+- `Utilities/DownloadLineHeuristics.swift`
+- `Views/MainView.swift`
+- `Views/ToolsView.swift`
+- `Models/ToolModels.swift`
+- `Tests/YouTubeDownloaderTests/DownloadLineHeuristicsTests.swift`
