@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+build/
+dist/
+YouTubeDownloader.app/
+*.dSYM/
+DerivedData/
+xcuserdata/
+*.xcuserstate

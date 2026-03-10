@@ -1,0 +1,48 @@
+name: YouTubeDownloader
+options:
+  createIntermediateGroups: true
+  xcodeVersion: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ARCHS: arm64
+    SUPPORTS_MACCATALYST: NO
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0.0
+targets:
+  YouTubeDownloader:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: YouTubeDownloaderApp.swift
+      - path: Models
+      - path: Managers
+      - path: Utilities
+      - path: Views
+      - path: Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pdg.YouTubeDownloader
+        PRODUCT_NAME: YouTubeDownloader
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: YouTube Downloader
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Packaging/YouTubeDownloader.entitlements
+  YouTubeDownloaderTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: YouTubeDownloader
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pdg.YouTubeDownloaderTests
+        GENERATE_INFOPLIST_FILE: YES
