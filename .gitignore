@@ -1,9 +1,14 @@
 .DS_Store
 .build/
+.swiftpm/
 build/
 dist/
 YouTubeDownloader.app/
+YouTubeDownloader-AppleSilicon.dmg
 *.dSYM/
 DerivedData/
+*.xcarchive
+*.xcresult
 xcuserdata/
+*.xcworkspace/xcuserdata/
 *.xcuserstate
