@@ -39,7 +39,7 @@
 		729F1EA69FB7AB8BA73121FE /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsView.swift; sourceTree = "<group>"; };
 		9627A05ABC342FD69D0DC366 /* DownloadLineHeuristicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadLineHeuristicsTests.swift; sourceTree = "<group>"; };
-		BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YouTubeDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoSimpleToolkit.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC40281F0484EDA299AC0322 /* ToolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolModels.swift; sourceTree = "<group>"; };
 		DB960C8D9768CDC0504FC591 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		EC9844325009D1A7D7B1044E /* YouTubeDownloaderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YouTubeDownloaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -81,7 +81,7 @@
 		69CA740D5CEA0E691C1868C5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */,
+				BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */,
 				EC9844325009D1A7D7B1044E /* YouTubeDownloaderTests.xctest */,
 			);
 			name = Products;
@@ -158,7 +158,7 @@
 			packageProductDependencies = (
 			);
 			productName = YouTubeDownloader;
-			productReference = BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */;
+			productReference = BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -259,7 +259,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
 			};
 			name = Release;
 		};
@@ -277,7 +277,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
 			};
 			name = Debug;
 		};
@@ -350,7 +350,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "YouTube Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "Video Simple Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -359,7 +359,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloader;
-				PRODUCT_NAME = YouTubeDownloader;
+				PRODUCT_NAME = VideoSimpleToolkit;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -440,7 +440,7 @@
 				COMBINE_HIDPI_IMAGES = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "YouTube Downloader";
+				INFOPLIST_KEY_CFBundleDisplayName = "Video Simple Toolkit";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -449,7 +449,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloader;
-				PRODUCT_NAME = YouTubeDownloader;
+				PRODUCT_NAME = VideoSimpleToolkit;
 				SDKROOT = macosx;
 			};
 			name = Debug;

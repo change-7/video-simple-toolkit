@@ -5,6 +5,8 @@ build/
 dist/
 YouTubeDownloader.app/
 YouTubeDownloader-AppleSilicon.dmg
+Video Simple Toolkit.app/
+Video Simple Toolkit-AppleSilicon.dmg
 *.dSYM/
 DerivedData/
 *.xcarchive

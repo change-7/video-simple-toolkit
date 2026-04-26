@@ -75,6 +75,8 @@ enum DownloadLineHeuristics {
             || lowercased.contains("members-only")
             || lowercased.contains("private video")
             || lowercased.contains("cookies")
+            || lowercased.contains("403 forbidden")
+            || lowercased.contains("access denied")
 
         signals.sawNetworkIssue =
             lowercased.contains("timed out")

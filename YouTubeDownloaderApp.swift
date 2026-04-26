@@ -37,7 +37,7 @@ struct YouTubeDownloaderApp: App {
  7) 영상 붙이기 파일 추가
     - Finder에서 로컬 영상 여러 개를 드래그하면 목록에 순서대로 추가되는지 확인
  8) 영상 붙이기 실행
-    - ffmpeg 설치 상태에서 파일 3개 이상 추가 후 "영상 합치기" 실행 시 merged-YYYYMMDD-HHMMSS.mp4 파일이 생성되는지 확인
+    - ffmpeg 설치 상태에서 파일 2개 이상 추가 후 "영상 합치기" 실행 시 merged-YYYYMMDD-HHMMSS.mp4 파일이 생성되는지 확인
  9) 영상 붙이기 중지
     - 병합 중 "중지" 클릭 시 프로세스가 종료되고 상태가 취소됨으로 바뀌는지 확인
 */

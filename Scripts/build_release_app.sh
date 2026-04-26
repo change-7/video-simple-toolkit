@@ -3,8 +3,9 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DERIVED_DATA="${PROJECT_ROOT}/build/ReleaseCheck"
-BUILT_APP="${DERIVED_DATA}/Build/Products/Release/YouTubeDownloader.app"
-OUTPUT_APP="${PROJECT_ROOT}/YouTubeDownloader.app"
+APP_NAME="Video Simple Toolkit"
+BUILT_APP="${DERIVED_DATA}/Build/Products/Release/VideoSimpleToolkit.app"
+OUTPUT_APP="${PROJECT_ROOT}/${APP_NAME}.app"
 
 xcodebuild \
   -project "${PROJECT_ROOT}/YouTubeDownloader.xcodeproj" \

@@ -14,9 +14,9 @@ struct ToolsView: View {
     @State private var selectedSettingsSection: SettingsSection? = .download
     @State private var alertMessage: String = ""
     @State private var showAlert = false
-    @State private var showHomebrewUninstallConfirmation = false
 
     private let homebrewInstallCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+    private let homebrewUninstallCommand = "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)\" -- --force"
     private let ytDlpUpgradeCommand = "brew upgrade yt-dlp"
 
     private var defaultPreset: Binding<DownloadPreset> {
@@ -91,18 +91,6 @@ struct ToolsView: View {
             Button("확인", role: .cancel) { }
         } message: {
             Text(alertMessage)
-        }
-        .confirmationDialog(
-            "Homebrew를 제거할까요?",
-            isPresented: $showHomebrewUninstallConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("제거", role: .destructive) {
-                toolManager.uninstallHomebrew()
-            }
-            Button("취소", role: .cancel) { }
-        } message: {
-            Text("Homebrew를 제거하면 관련 패키지가 함께 제거될 수 있습니다.")
         }
     }
 
@@ -233,8 +221,14 @@ struct ToolsView: View {
                     managedToolRow(
                         title: "Homebrew",
                         isInstalled: toolManager.homebrewInstalled,
-                        onInstall: { toolManager.installHomebrew() },
-                        onUninstall: { showHomebrewUninstallConfirmation = true }
+                        onInstall: {
+                            alertMessage = "Homebrew 설치는 Terminal.app에서 진행하는 방식이 가장 안정적입니다.\n\n설치 명령:\n\(homebrewInstallCommand)"
+                            showAlert = true
+                        },
+                        onUninstall: {
+                            alertMessage = "Homebrew 제거도 Terminal.app에서 진행하는 방식이 가장 안정적입니다.\n\n제거 명령:\n\(homebrewUninstallCommand)"
+                            showAlert = true
+                        }
                     )
 
                     Divider()
@@ -260,15 +254,16 @@ struct ToolsView: View {
 
             GroupBox("터미널 설치 방법") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("앱 내부 설치/제거가 실패하면 Terminal.app에서 아래 명령을 실행하세요.")
+                    Text("Homebrew는 Terminal.app에서 설치/제거하는 방식이 가장 안정적입니다. yt-dlp와 ffmpeg도 앱 내부 설치가 실패하면 아래 명령을 사용하세요.")
                         .font(.callout)
                     Text("명령 실행 후 상단의 다시 검사 또는 각 항목의 검사 버튼으로 설치 여부를 확인하세요.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                     commandRow(title: "1) Homebrew 설치(최초 1회)", command: homebrewInstallCommand)
-                    commandRow(title: "2) yt-dlp 설치", command: "brew install yt-dlp")
-                    commandRow(title: "3) ffmpeg 설치", command: "brew install ffmpeg")
+                    commandRow(title: "2) Homebrew 제거", command: homebrewUninstallCommand)
+                    commandRow(title: "3) yt-dlp 설치", command: "brew install yt-dlp")
+                    commandRow(title: "4) ffmpeg 설치", command: "brew install ffmpeg")
                 }
                 .padding(.top, 4)
             }

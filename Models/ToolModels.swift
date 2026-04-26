@@ -128,6 +128,7 @@ struct DownloadOptions {
     let preset: DownloadPreset
     let conflictPolicy: FilenameConflictPolicy
     let filenameTemplate: String
+    let forceDirectStreamCapture: Bool
     let hlsAutoReconnectEnabled: Bool
     let hlsReconnectFailTimeoutSeconds: Int
 
@@ -135,6 +136,7 @@ struct DownloadOptions {
         preset: .macCompatibleMP4,
         conflictPolicy: .autoRename,
         filenameTemplate: "%(title)s.%(ext)s",
+        forceDirectStreamCapture: false,
         hlsAutoReconnectEnabled: true,
         hlsReconnectFailTimeoutSeconds: 90
     )

@@ -12,7 +12,7 @@
 ## Typical Flow
 1. `xcodegen generate` (if project settings changed)
 2. `Scripts/archive_and_sign.sh`
-3. `Scripts/create_dmg.sh /path/to/signed/YouTubeDownloader.app`
+3. `Scripts/create_dmg.sh "/path/to/signed/Video Simple Toolkit.app"`
 4. `Scripts/notarize_dmg.sh`
 
 ## Notes

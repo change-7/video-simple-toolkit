@@ -2,10 +2,11 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_PATH="${1:-${PROJECT_ROOT}/YouTubeDownloader.app}"
-DMG_PATH="${2:-${PROJECT_ROOT}/YouTubeDownloader-AppleSilicon.dmg}"
+APP_NAME="Video Simple Toolkit"
+APP_PATH="${1:-${PROJECT_ROOT}/${APP_NAME}.app}"
+DMG_PATH="${2:-${PROJECT_ROOT}/${APP_NAME}-AppleSilicon.dmg}"
 STAGE_DIR="${PROJECT_ROOT}/dist/dmg-root"
-VOL_NAME="YouTubeDownloader"
+VOL_NAME="${APP_NAME}"
 
 if [[ ! -d "${APP_PATH}" ]]; then
   echo "App not found: ${APP_PATH}"
@@ -45,7 +46,7 @@ fi
 
 rm -rf "${STAGE_DIR}"
 mkdir -p "${STAGE_DIR}"
-cp -R "${APP_PATH}" "${STAGE_DIR}/YouTubeDownloader.app"
+cp -R "${APP_PATH}" "${STAGE_DIR}/${APP_NAME}.app"
 ln -s /Applications "${STAGE_DIR}/Applications"
 
 rm -f "${DMG_PATH}"

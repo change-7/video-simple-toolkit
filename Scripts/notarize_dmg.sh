@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DMG_PATH="${1:-${PROJECT_ROOT}/YouTubeDownloader-AppleSilicon.dmg}"
+DMG_PATH="${1:-${PROJECT_ROOT}/Video Simple Toolkit-AppleSilicon.dmg}"
 
 if [[ ! -f "${DMG_PATH}" ]]; then
   echo "DMG not found: ${DMG_PATH}"

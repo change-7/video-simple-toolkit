@@ -1,5 +1,5 @@
 ## Project goal
-- Build a macOS Apple Silicon-only SwiftUI app that downloads YouTube and direct m3u8 content through `yt-dlp` and `ffmpeg`.
+- Build `Video Simple Toolkit`, a macOS Apple Silicon-only SwiftUI app for YouTube/direct downloads, stream recording, video merging, and subtitle video generation through `yt-dlp` and `ffmpeg`.
 - The app must not open Terminal for downloads. It runs tools internally with `Process` and streams output into the UI.
 - Distribution target is direct `.app` / `.dmg`, not the App Store.
 
@@ -12,6 +12,7 @@
 
 ## Run
 - Open `YouTubeDownloader.xcodeproj` in Xcode and run the `YouTubeDownloader` scheme.
+- The internal project/scheme names remain `YouTubeDownloader`; the built app product is `Video Simple Toolkit`.
 - CLI build:
 ```bash
 xcodebuild -project "YouTubeDownloader.xcodeproj" \

@@ -106,22 +106,6 @@ final class ToolManager: ObservableObject {
         }
     }
 
-    func installHomebrew() {
-        let script = "NONINTERACTIVE=1 /bin/bash -c \"$(/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        runShellToolAction(
-            title: "Homebrew 설치",
-            command: script
-        )
-    }
-
-    func uninstallHomebrew() {
-        let script = "NONINTERACTIVE=1 /bin/bash -c \"$(/usr/bin/curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)\" -- --force"
-        runShellToolAction(
-            title: "Homebrew 제거",
-            command: script
-        )
-    }
-
     func installYtDlp() {
         runBrewToolAction(
             title: "yt-dlp 설치",
@@ -299,15 +283,6 @@ final class ToolManager: ObservableObject {
             title: title,
             executableURL: URL(fileURLWithPath: brewPath),
             arguments: arguments,
-            environment: baseToolEnvironment()
-        )
-    }
-
-    private func runShellToolAction(title: String, command: String) {
-        runToolAction(
-            title: title,
-            executableURL: URL(fileURLWithPath: "/bin/bash"),
-            arguments: ["-c", command],
             environment: baseToolEnvironment()
         )
     }

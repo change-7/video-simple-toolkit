@@ -31,24 +31,58 @@ final class RunningProcess {
 
     func cancel() {
         guard process.isRunning else { return }
+        if signalProcessGroup(SIGTERM) {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, self.process.isRunning else { return }
+                _ = self.signalProcessGroup(SIGKILL)
+            }
+            return
+        }
+
         process.terminate()
+    }
+
+    func cancelGracefully() {
+        guard process.isRunning else { return }
+
+        if signalProcessGroup(SIGINT) {
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self, self.process.isRunning else { return }
+                _ = self.signalProcessGroup(SIGTERM)
+            }
+            return
+        }
+
+        process.interrupt()
     }
 
     @discardableResult
     func pause() -> Bool {
         guard process.isRunning else { return false }
-        return kill(process.processIdentifier, SIGSTOP) == 0
+        return signalProcessGroup(SIGSTOP)
     }
 
     @discardableResult
     func resume() -> Bool {
         guard process.isRunning else { return false }
-        return kill(process.processIdentifier, SIGCONT) == 0
+        return signalProcessGroup(SIGCONT)
     }
 
     func cleanup() {
         stdoutHandle.readabilityHandler = nil
         stderrHandle.readabilityHandler = nil
+    }
+
+    @discardableResult
+    private func signalProcessGroup(_ signal: Int32) -> Bool {
+        let pid = process.processIdentifier
+        guard pid > 0 else { return false }
+
+        if kill(-pid, signal) == 0 {
+            return true
+        }
+
+        return kill(pid, signal) == 0
     }
 }
 
@@ -217,6 +251,7 @@ enum ProcessRunner {
 
         do {
             try process.run()
+            _ = setpgid(process.processIdentifier, process.processIdentifier)
         } catch {
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil

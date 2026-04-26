@@ -24,6 +24,7 @@ final class DownloadManager: ObservableObject {
         let statusEvent: StatusEvent?
         let errorMessage: String?
         let failureSignals: DownloadFailureSignals
+        let reusedExistingDownload: Bool
     }
 
     private struct FFmpegRecordingProgressState {
@@ -54,6 +55,8 @@ final class DownloadManager: ObservableObject {
     private var lastTemporaryOutputPath: URL?
     private var hasTemporaryArtifacts = false
     private var aggregatedFailureSignals = DownloadFailureSignals()
+    private var currentRunStartedAt: Date?
+    private var didReuseExistingDownload = false
     private var pendingAnalyses: [LineAnalysis] = []
     private var analysisFlushWorkItem: DispatchWorkItem?
     private var pendingStatusEvent: StatusEvent?
@@ -92,8 +95,8 @@ final class DownloadManager: ObservableObject {
         guard !isDownloading else { return }
 
         resetForNewDownload(outputDir: outputDir, toolPaths: toolPaths)
-        if isLikelyM3U8URL(trimmedURL) {
-            transition(to: .preparing, status: "m3u8 녹화 준비 중")
+        if options.forceDirectStreamCapture || isLikelyM3U8URL(trimmedURL) {
+            transition(to: .preparing, status: "스트리밍 녹화 준비 중")
             startDirectM3U8Recording(
                 url: trimmedURL,
                 outputDir: outputDir,
@@ -222,7 +225,11 @@ final class DownloadManager: ObservableObject {
             self.statusFlushWorkItem = nil
             self.phase = .canceled
             self.statusText = self.currentExecutionMode == .directM3U8Recording ? "녹화 종료 요청 중" : "취소 요청 중"
-            self.runningProcess?.cancel()
+            if self.currentExecutionMode == .directM3U8Recording {
+                self.runningProcess?.cancelGracefully()
+            } else {
+                self.runningProcess?.cancel()
+            }
         }
     }
 
@@ -234,7 +241,7 @@ final class DownloadManager: ObservableObject {
             if self.isPaused {
                 if runningProcess.resume() {
                     self.isPaused = false
-                    self.phase = .downloading
+                    self.phase = self.currentExecutionMode == .directM3U8Recording ? .recording : .downloading
                     self.userMessage = nil
                 } else {
                     self.userMessage = "다운로드 재개에 실패했습니다."
@@ -255,6 +262,8 @@ final class DownloadManager: ObservableObject {
         didCancel = false
         hasTemporaryArtifacts = false
         aggregatedFailureSignals = DownloadFailureSignals()
+        currentRunStartedAt = Date()
+        didReuseExistingDownload = false
         currentExecutionMode = .ytDlp
         ffmpegRecordingProgressState.reset()
 
@@ -371,6 +380,8 @@ final class DownloadManager: ObservableObject {
             "-progress", "pipe:2"
         ]
 
+        arguments += directStreamInputArguments(for: url)
+
         if options.hlsAutoReconnectEnabled {
             let timeoutSeconds = min(max(options.hlsReconnectFailTimeoutSeconds, 15), 1800)
             let timeoutMicroseconds = timeoutSeconds * 1_000_000
@@ -421,6 +432,76 @@ final class DownloadManager: ObservableObject {
 
         arguments.append(outputURL.path)
         return arguments
+    }
+
+    private func directStreamInputArguments(for url: String) -> [String] {
+        let requestOptions = directStreamRequestOptions(for: url)
+        var arguments: [String] = []
+
+        if let userAgent = requestOptions.userAgent {
+            arguments += ["-user_agent", userAgent]
+        }
+
+        if !requestOptions.headers.isEmpty {
+            arguments += ["-headers", formatFFmpegHeaders(requestOptions.headers)]
+        }
+
+        return arguments
+    }
+
+    private func directStreamRequestOptions(for url: String) -> (userAgent: String?, headers: [String: String]) {
+        let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        var headers: [String: String] = [:]
+
+        if let origin = inferredAllowedOrigin(from: url) {
+            headers["Origin"] = origin
+            headers["Referer"] = origin.hasSuffix("/") ? origin : "\(origin)/"
+        }
+
+        return (userAgent: userAgent, headers: headers)
+    }
+
+    private func formatFFmpegHeaders(_ headers: [String: String]) -> String {
+        headers
+            .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+            .map { "\($0.key): \($0.value)" }
+            .joined(separator: "\r\n")
+            .appending("\r\n")
+    }
+
+    private func inferredAllowedOrigin(from url: String) -> String? {
+        guard let components = URLComponents(string: url) else {
+            return nil
+        }
+
+        if let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
+           let origin = extractAllowedOrigin(fromJWT: token) {
+            return origin
+        }
+
+        return nil
+    }
+
+    private func extractAllowedOrigin(fromJWT token: String) -> String? {
+        let segments = token.split(separator: ".")
+        guard segments.count >= 2,
+              let payload = Data(base64URLEncoded: String(segments[1])),
+              let jsonObject = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let rawOrigins = jsonObject["aws:access-control-allow-origin"] as? String
+        else {
+            return nil
+        }
+
+        let origins = rawOrigins
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { $0.hasPrefix("https://") && !$0.contains("*") }
+
+        if let preferredKickOrigin = origins.first(where: { $0.contains("kick.com") }) {
+            return preferredKickOrigin
+        }
+
+        return origins.first
     }
 
     private func buildDirectM3U8OutputURL(
@@ -571,6 +652,7 @@ final class DownloadManager: ObservableObject {
 
     private func applyLineAnalysis(_ analysis: LineAnalysis) {
         aggregatedFailureSignals.merge(analysis.failureSignals)
+        didReuseExistingDownload = didReuseExistingDownload || analysis.reusedExistingDownload
 
         if let outputFilePath = analysis.outputFilePath {
             if isTemporaryPath(outputFilePath) {
@@ -617,7 +699,7 @@ final class DownloadManager: ObservableObject {
     private func analyzeLine(_ line: String, isStderr: Bool) -> LineAnalysis {
         let failureSignals = DownloadLineHeuristics.classifyFailureSignals(line: line, isStderr: isStderr)
         let detectedOutputFilePath = DownloadLineHeuristics.parseOutputPath(line: line)
-            .map { URL(fileURLWithPath: $0) }
+            .map(resolveDetectedOutputURL(from:))
 
         let statusEvent: StatusEvent?
         if currentExecutionMode == .directM3U8Recording {
@@ -641,8 +723,25 @@ final class DownloadManager: ObservableObject {
             outputFilePath: detectedOutputFilePath,
             statusEvent: statusEvent,
             errorMessage: errorMessage,
-            failureSignals: failureSignals
+            failureSignals: failureSignals,
+            reusedExistingDownload: line.localizedCaseInsensitiveContains("has already been downloaded")
         )
+    }
+
+    private func resolveDetectedOutputURL(from rawPath: String) -> URL {
+        let trimmedPath = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmedPath.hasPrefix("/") {
+            return URL(fileURLWithPath: trimmedPath).standardizedFileURL
+        }
+
+        if let currentOutputDirectory {
+            return currentOutputDirectory
+                .appendingPathComponent(trimmedPath)
+                .standardizedFileURL
+        }
+
+        return URL(fileURLWithPath: trimmedPath).standardizedFileURL
     }
 
     private func parseStatusEvent(from line: String) -> StatusEvent? {
@@ -765,25 +864,25 @@ final class DownloadManager: ObservableObject {
             case .toolMissing:
                 return "ffmpeg를 찾지 못했습니다. 설정에서 설치 여부를 확인해 주세요."
             case .invalidURL:
-                return "유효한 m3u8 URL을 입력해 주세요."
+                return "유효한 스트리밍 URL을 입력해 주세요."
             case .network:
-                return "실시간 m3u8 녹화가 네트워크 문제로 중단되었습니다. 재접속 설정을 확인해 주세요."
+                return "실시간 스트리밍 녹화가 네트워크 문제로 중단되었습니다. 재접속 설정을 확인해 주세요."
             case .permission:
                 return "저장 폴더 권한 문제로 녹화에 실패했습니다. 다른 폴더를 선택해 보세요."
             case .diskFull:
                 return "디스크 공간이 부족해 녹화에 실패했습니다. 여유 공간을 확보해 주세요."
             case .authOrGeo:
-                return "실시간 스트림 접근이 제한되어 녹화에 실패했을 수 있습니다."
+                return "실시간 스트림 접근이 거부되었습니다. 만료된 주소이거나 필요한 헤더가 부족할 수 있습니다."
             case .ytdlpOutdatedLikely:
-                return "실시간 m3u8 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
+                return "실시간 스트리밍 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
             case .ffmpeg:
-                return "실시간 m3u8 녹화에 실패했습니다. ffmpeg를 확인해 주세요."
+                return "실시간 스트리밍 녹화에 실패했습니다. ffmpeg를 확인해 주세요."
             case .incompleteFile:
                 return "실시간 녹화 파일이 불완전하게 끝났습니다. ffmpeg 상태를 확인해 주세요."
             case .execution:
                 return "녹화 프로세스를 실행하지 못했습니다."
             case .unknown:
-                return "실시간 m3u8 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
+                return "실시간 스트리밍 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
             }
         }
 
@@ -837,7 +936,12 @@ final class DownloadManager: ObservableObject {
         case .ffmpeg:
             steps.append("ffmpeg 업데이트: brew upgrade ffmpeg")
         case .authOrGeo:
-            steps.append("연령/지역 제한 영상은 로그인/쿠키가 필요할 수 있습니다. (MVP 미지원)")
+            if currentExecutionMode == .directM3U8Recording {
+                steps.append("스트림 주소를 새로 받아 다시 시도")
+                steps.append("웹 플레이어에서 열리는 최신 주소인지 확인")
+            } else {
+                steps.append("연령/지역 제한 영상은 로그인/쿠키가 필요할 수 있습니다. (MVP 미지원)")
+            }
         case .permission:
             steps.append("다른 저장 폴더를 선택해 다시 시도")
         case .diskFull:
@@ -850,7 +954,7 @@ final class DownloadManager: ObservableObject {
 
         if currentExecutionMode == .directM3U8Recording,
            category == .network {
-            steps.insert("m3u8 재접속 설정 확인 후 다시 시도", at: 0)
+            steps.insert("스트리밍 재접속 설정 확인 후 다시 시도", at: 0)
         }
 
         if hasTemporaryArtifacts {
@@ -894,24 +998,69 @@ final class DownloadManager: ObservableObject {
     }
 
     private func resolveCompletedOutputPath() -> URL? {
-        if let outputFilePath, !isTemporaryPath(outputFilePath) {
-            return outputFilePath
+        if let outputFilePath,
+           !isTemporaryPath(outputFilePath),
+           isEligibleCompletedFile(outputFilePath) {
+            return outputFilePath.standardizedFileURL
         }
 
         if let temporary = lastTemporaryOutputPath {
             if let candidate = completedCandidate(fromTemporaryPath: temporary),
-               FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
+               isEligibleCompletedFile(candidate) {
+                return candidate.standardizedFileURL
             }
         }
 
         if let plannedOutput = outputFilePath,
            !isTemporaryPath(plannedOutput),
-           FileManager.default.fileExists(atPath: plannedOutput.path) {
-            return plannedOutput
+           isEligibleCompletedFile(plannedOutput) {
+            return plannedOutput.standardizedFileURL
+        }
+
+        if let outputFilePath,
+           let currentOutputDirectory {
+            let outputName = outputFilePath.lastPathComponent
+            if !outputName.isEmpty {
+                let candidate = currentOutputDirectory
+                    .appendingPathComponent(outputName)
+                    .standardizedFileURL
+                if !isTemporaryPath(candidate),
+                   isEligibleCompletedFile(candidate) {
+                    return candidate
+                }
+            }
         }
 
         return nil
+    }
+
+    private func isEligibleCompletedFile(_ fileURL: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return false
+        }
+
+        guard !didReuseExistingDownload else {
+            return true
+        }
+
+        guard let currentRunStartedAt else {
+            return true
+        }
+
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey]
+        guard let values = try? fileURL.resourceValues(forKeys: keys) else {
+            return false
+        }
+
+        let referenceDate = currentRunStartedAt.addingTimeInterval(-5)
+        if let modificationDate = values.contentModificationDate, modificationDate >= referenceDate {
+            return true
+        }
+        if let creationDate = values.creationDate, creationDate >= referenceDate {
+            return true
+        }
+
+        return false
     }
 
     private func sawIncompleteTemporaryArtifactsWithoutFinalOutput(
@@ -1095,6 +1244,7 @@ final class DownloadManager: ObservableObject {
 
         progress = 1
         failureCategory = nil
+        userMessage = "저장됨: \(resolvedOutput.path)"
         transition(
             to: .completed,
             status: currentExecutionMode == .directM3U8Recording ? "녹화 완료" : "100% | 완료"
@@ -1122,6 +1272,22 @@ final class DownloadManager: ObservableObject {
 
         progress = 1
         failureCategory = nil
+        userMessage = "저장됨: \(resolvedOutput.path)"
         transition(to: .completed, status: "녹화 완료")
+    }
+}
+
+private extension Data {
+    init?(base64URLEncoded string: String) {
+        var normalized = string
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        let remainder = normalized.count % 4
+        if remainder != 0 {
+            normalized.append(String(repeating: "=", count: 4 - remainder))
+        }
+
+        self.init(base64Encoded: normalized)
     }
 }
