@@ -11,9 +11,9 @@
 - Changed `ffprobe` validation failure to fail the download instead of marking it complete.
 - Reduced wasted state and log buffering overhead in `DownloadManager` and `ToolManager`.
 - Release build succeeded and root app bundle was refreshed: `Video Simple Toolkit.app`
+- GitHub repository was renamed and made public: `https://github.com/change-7/video-simple-toolkit`
 
 ## In progress
-- GitHub repository/docs are being refreshed for the new app name and current feature set.
 - Test execution is not fully verified in this environment.
 
 ## Problems
