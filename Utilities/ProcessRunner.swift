@@ -9,13 +9,6 @@ struct ProcessResult {
 
 enum ProcessRunnerError: LocalizedError {
     case launchFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .launchFailed(let message):
-            return "프로세스를 시작하지 못했습니다: \(message)"
-        }
-    }
 }
 
 final class RunningProcess {

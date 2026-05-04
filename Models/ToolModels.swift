@@ -170,21 +170,6 @@ struct ToolStatus {
         ytDlp.isInstalled && ffmpeg.isInstalled
     }
 
-    var resolvedPaths: ToolPaths? {
-        guard
-            let ytDlpPath = ytDlp.path,
-            let ffmpegPath = ffmpeg.path
-        else {
-            return nil
-        }
-
-        return ToolPaths(
-            ytDlpPath: URL(fileURLWithPath: ytDlpPath),
-            ffmpegPath: URL(fileURLWithPath: ffmpegPath),
-            ffprobePath: ffprobe?.path.map { URL(fileURLWithPath: $0) }
-        )
-    }
-
     static let empty = ToolStatus(
         ytDlp: ToolInfo(
             name: "yt-dlp",
