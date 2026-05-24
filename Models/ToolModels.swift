@@ -10,6 +10,8 @@ enum SettingsKeys {
     static let mergeBehavior = "settings.merge.behavior"
     static let hlsAutoReconnectEnabled = "settings.hls.autoReconnectEnabled"
     static let hlsReconnectFailTimeoutSeconds = "settings.hls.reconnectFailTimeoutSeconds"
+    static let editorAutoImportDownloadedMedia = "settings.editor.autoImportDownloadedMedia"
+    static let hoverHelpEnabled = "settings.ui.hoverHelpEnabled"
 }
 
 enum DownloadPreset: String, CaseIterable, Identifiable {

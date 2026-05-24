@@ -7,14 +7,30 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04A10986B701FDB61B135B1E /* ToolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC40281F0484EDA299AC0322 /* ToolModels.swift */; };
+		0F3F3C76DBCB2E618F1A7591 /* EditorExportManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 459F2367131B8DAC6E68613A /* EditorExportManager.swift */; };
+		101C985B6B2252200040348D /* EditorRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D24F035AB0A6888BF1E8255 /* EditorRootView.swift */; };
+		14B4A7FE95B345F0DC0A86CA /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 729F1EA69FB7AB8BA73121FE /* DownloadManager.swift */; };
 		1B0B513BCFD8142D6C6EC48E /* ProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CE749BCE97690C7524D06D /* ProcessRunner.swift */; };
 		24E2EDFD5CD541089084F8B5 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F519A70C792AF6B0FA1565B /* CopyButton.swift */; };
+		342CF5FFA14EFC93CEB97244 /* CopyButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F519A70C792AF6B0FA1565B /* CopyButton.swift */; };
+		3863E525E85AE801BC20918A /* DownloadLineHeuristics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05061A0055D3BB13141F6F70 /* DownloadLineHeuristics.swift */; };
 		46E60D7E06082FC97D71E965 /* ToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */; };
+		4A3C43A15EDB43D3983F1FB8 /* InstantHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBE6F8A9F9D4C13AD0BA4CA /* InstantHelp.swift */; };
 		59CC58B78A0C9BAB2A38ADD2 /* ToolManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F279ADE6D2CE49C5F439F625 /* ToolManager.swift */; };
 		6EDC7CAB89888EAA41820F7B /* YouTubeDownloaderApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531F813E843694D71FB0D4D2 /* YouTubeDownloaderApp.swift */; };
+		7F257961810ECA21F3C3F97D /* VideoSimpleToolkitEditorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E19AE41E3C721E1F150913 /* VideoSimpleToolkitEditorApp.swift */; };
+		A87337A209AE49563CA7668F /* EditorWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7B9A07EC81285B8CFBC13D /* EditorWorkspaceView.swift */; };
 		ACD66C51471CBFB8AF4695B8 /* DownloadLineHeuristics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05061A0055D3BB13141F6F70 /* DownloadLineHeuristics.swift */; };
+		AD20AA415DA504AD8B361194 /* ToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */; };
+		AE04728F4742D65B2C53F72F /* ProcessRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CE749BCE97690C7524D06D /* ProcessRunner.swift */; };
+		B090A33979634E9C92B4E58F /* InstantHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DBE6F8A9F9D4C13AD0BA4CA /* InstantHelp.swift */; };
+		B10F42EE5DD23A0B4BB20AF6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0535271E0206EA6CE16B6C4B /* Assets.xcassets */; };
+		C18CCA7C3DE2D1E723CBE6F4 /* ToolManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F279ADE6D2CE49C5F439F625 /* ToolManager.swift */; };
 		C1A22A1E0422D7F68CF31147 /* ToolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC40281F0484EDA299AC0322 /* ToolModels.swift */; };
 		C22E8F54EF663E0C9B5932C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0535271E0206EA6CE16B6C4B /* Assets.xcassets */; };
+		CF2A6D6AEBBDD2B198DB31FC /* EditorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B68B98C8FA8897C811670B7E /* EditorModel.swift */; };
+		D9D8E805A0FDF54B112DDB6A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB960C8D9768CDC0504FC591 /* MainView.swift */; };
 		E5B67811361EA9DD0C688996 /* DownloadLineHeuristicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9627A05ABC342FD69D0DC366 /* DownloadLineHeuristicsTests.swift */; };
 		F68DF40A256D10319EC47A48 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB960C8D9768CDC0504FC591 /* MainView.swift */; };
 		FA3B889CEF2B49A27DE43934 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 729F1EA69FB7AB8BA73121FE /* DownloadManager.swift */; };
@@ -33,13 +49,20 @@
 /* Begin PBXFileReference section */
 		05061A0055D3BB13141F6F70 /* DownloadLineHeuristics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadLineHeuristics.swift; sourceTree = "<group>"; };
 		0535271E0206EA6CE16B6C4B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0D43AB672C19DF5C44660942 /* VideoSimpleToolkitEditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoSimpleToolkitEditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		31E19AE41E3C721E1F150913 /* VideoSimpleToolkitEditorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoSimpleToolkitEditorApp.swift; sourceTree = "<group>"; };
+		3D24F035AB0A6888BF1E8255 /* EditorRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorRootView.swift; sourceTree = "<group>"; };
+		459F2367131B8DAC6E68613A /* EditorExportManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorExportManager.swift; sourceTree = "<group>"; };
 		50CE749BCE97690C7524D06D /* ProcessRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessRunner.swift; sourceTree = "<group>"; };
 		531F813E843694D71FB0D4D2 /* YouTubeDownloaderApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeDownloaderApp.swift; sourceTree = "<group>"; };
 		6F519A70C792AF6B0FA1565B /* CopyButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyButton.swift; sourceTree = "<group>"; };
 		729F1EA69FB7AB8BA73121FE /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsView.swift; sourceTree = "<group>"; };
+		8F7B9A07EC81285B8CFBC13D /* EditorWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorWorkspaceView.swift; sourceTree = "<group>"; };
+		9DBE6F8A9F9D4C13AD0BA4CA /* InstantHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantHelp.swift; sourceTree = "<group>"; };
 		9627A05ABC342FD69D0DC366 /* DownloadLineHeuristicsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadLineHeuristicsTests.swift; sourceTree = "<group>"; };
-		BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoSimpleToolkit.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B68B98C8FA8897C811670B7E /* EditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorModel.swift; sourceTree = "<group>"; };
+		BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YouTubeDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC40281F0484EDA299AC0322 /* ToolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolModels.swift; sourceTree = "<group>"; };
 		DB960C8D9768CDC0504FC591 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		EC9844325009D1A7D7B1044E /* YouTubeDownloaderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YouTubeDownloaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -55,11 +78,23 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		378D84C95EEA4EC1AA78C4EB /* Editor */ = {
+			isa = PBXGroup;
+			children = (
+				459F2367131B8DAC6E68613A /* EditorExportManager.swift */,
+				B68B98C8FA8897C811670B7E /* EditorModel.swift */,
+				8F7B9A07EC81285B8CFBC13D /* EditorWorkspaceView.swift */,
+			);
+			path = Editor;
+			sourceTree = "<group>";
+		};
 		4611BE9E353250C027EAD1EC = {
 			isa = PBXGroup;
 			children = (
 				0535271E0206EA6CE16B6C4B /* Assets.xcassets */,
 				531F813E843694D71FB0D4D2 /* YouTubeDownloaderApp.swift */,
+				378D84C95EEA4EC1AA78C4EB /* Editor */,
+				D9F52292EAB99561E518A32D /* EditorApp */,
 				81CD5663E4EF9542FC74D93B /* Managers */,
 				2D48F4CBE34E933681E309BF /* Models */,
 				D42947CC71F9B157DCC0A0B5 /* Tests */,
@@ -81,7 +116,8 @@
 		69CA740D5CEA0E691C1868C5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */,
+				0D43AB672C19DF5C44660942 /* VideoSimpleToolkitEditor.app */,
+				BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */,
 				EC9844325009D1A7D7B1044E /* YouTubeDownloaderTests.xctest */,
 			);
 			name = Products;
@@ -104,6 +140,15 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		D9F52292EAB99561E518A32D /* EditorApp */ = {
+			isa = PBXGroup;
+			children = (
+				3D24F035AB0A6888BF1E8255 /* EditorRootView.swift */,
+				31E19AE41E3C721E1F150913 /* VideoSimpleToolkitEditorApp.swift */,
+			);
+			path = EditorApp;
+			sourceTree = "<group>";
+		};
 		E65E622958D519ECE85D2CA5 /* YouTubeDownloaderTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -116,6 +161,7 @@
 			isa = PBXGroup;
 			children = (
 				6F519A70C792AF6B0FA1565B /* CopyButton.swift */,
+				9DBE6F8A9F9D4C13AD0BA4CA /* InstantHelp.swift */,
 				DB960C8D9768CDC0504FC591 /* MainView.swift */,
 				8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */,
 			);
@@ -158,7 +204,25 @@
 			packageProductDependencies = (
 			);
 			productName = YouTubeDownloader;
-			productReference = BE9BF59F7AB86612953BD022 /* VideoSimpleToolkit.app */;
+			productReference = BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */;
+			productType = "com.apple.product-type.application";
+		};
+		87FD65984563B0008AFDEAFB /* VideoSimpleToolkitEditor */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AE9DCEF3BAE2360E6A66DA8F /* Build configuration list for PBXNativeTarget "VideoSimpleToolkitEditor" */;
+			buildPhases = (
+				F296DB536AB054AAEEC1CE52 /* Sources */,
+				CD60F78B1FAF2EA70E2DF0F6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VideoSimpleToolkitEditor;
+			packageProductDependencies = (
+			);
+			productName = VideoSimpleToolkitEditor;
+			productReference = 0D43AB672C19DF5C44660942 /* VideoSimpleToolkitEditor.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -174,6 +238,9 @@
 						ProvisioningStyle = Automatic;
 					};
 					750F1BC6ED07A484C7DDCFC1 = {
+						ProvisioningStyle = Automatic;
+					};
+					87FD65984563B0008AFDEAFB = {
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -192,6 +259,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				87FD65984563B0008AFDEAFB /* VideoSimpleToolkitEditor */,
 				750F1BC6ED07A484C7DDCFC1 /* YouTubeDownloader */,
 				430ACD246F80D2A08C9B52BC /* YouTubeDownloaderTests */,
 			);
@@ -204,6 +272,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				C22E8F54EF663E0C9B5932C1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CD60F78B1FAF2EA70E2DF0F6 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10F42EE5DD23A0B4BB20AF6 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -225,12 +301,34 @@
 				24E2EDFD5CD541089084F8B5 /* CopyButton.swift in Sources */,
 				ACD66C51471CBFB8AF4695B8 /* DownloadLineHeuristics.swift in Sources */,
 				FA3B889CEF2B49A27DE43934 /* DownloadManager.swift in Sources */,
+				4A3C43A15EDB43D3983F1FB8 /* InstantHelp.swift in Sources */,
 				F68DF40A256D10319EC47A48 /* MainView.swift in Sources */,
 				1B0B513BCFD8142D6C6EC48E /* ProcessRunner.swift in Sources */,
 				59CC58B78A0C9BAB2A38ADD2 /* ToolManager.swift in Sources */,
 				C1A22A1E0422D7F68CF31147 /* ToolModels.swift in Sources */,
 				46E60D7E06082FC97D71E965 /* ToolsView.swift in Sources */,
 				6EDC7CAB89888EAA41820F7B /* YouTubeDownloaderApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F296DB536AB054AAEEC1CE52 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				342CF5FFA14EFC93CEB97244 /* CopyButton.swift in Sources */,
+				3863E525E85AE801BC20918A /* DownloadLineHeuristics.swift in Sources */,
+				14B4A7FE95B345F0DC0A86CA /* DownloadManager.swift in Sources */,
+				0F3F3C76DBCB2E618F1A7591 /* EditorExportManager.swift in Sources */,
+				CF2A6D6AEBBDD2B198DB31FC /* EditorModel.swift in Sources */,
+				101C985B6B2252200040348D /* EditorRootView.swift in Sources */,
+				A87337A209AE49563CA7668F /* EditorWorkspaceView.swift in Sources */,
+				B090A33979634E9C92B4E58F /* InstantHelp.swift in Sources */,
+				D9D8E805A0FDF54B112DDB6A /* MainView.swift in Sources */,
+				AE04728F4742D65B2C53F72F /* ProcessRunner.swift in Sources */,
+				C18CCA7C3DE2D1E723CBE6F4 /* ToolManager.swift in Sources */,
+				04A10986B701FDB61B135B1E /* ToolModels.swift in Sources */,
+				AD20AA415DA504AD8B361194 /* ToolsView.swift in Sources */,
+				7F257961810ECA21F3C3F97D /* VideoSimpleToolkitEditorApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -245,6 +343,28 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0B8F4680D7614727162AC948 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Packaging/YouTubeDownloader.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Video Simple Toolkit Editor";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.VideoSimpleToolkitEditor;
+				PRODUCT_NAME = VideoSimpleToolkitEditor;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
 		1FDFAAE0147D440DCD36D8CE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -259,7 +379,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
 			};
 			name = Release;
 		};
@@ -277,7 +397,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
 			};
 			name = Debug;
 		};
@@ -341,6 +461,28 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
+		};
+		8F646E200C8782B435D7712C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Packaging/YouTubeDownloader.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Video Simple Toolkit Editor";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.VideoSimpleToolkitEditor;
+				PRODUCT_NAME = VideoSimpleToolkitEditor;
+				SDKROOT = macosx;
+			};
+			name = Debug;
 		};
 		B73972A0BD437698C9C3E6DE /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -462,6 +604,15 @@
 			buildConfigurations = (
 				CE1EF81A98822B7760712201 /* Debug */,
 				8649E583B4D8F59BB9C53E0A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AE9DCEF3BAE2360E6A66DA8F /* Build configuration list for PBXNativeTarget "VideoSimpleToolkitEditor" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8F646E200C8782B435D7712C /* Debug */,
+				0B8F4680D7614727162AC948 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

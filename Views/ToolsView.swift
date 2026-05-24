@@ -10,6 +10,7 @@ struct ToolsView: View {
     @AppStorage(SettingsKeys.ytDlpCheckUpdateOnLaunch) private var ytDlpCheckUpdateOnLaunch: Bool = true
     @AppStorage(SettingsKeys.hlsAutoReconnectEnabled) private var hlsAutoReconnectEnabled: Bool = true
     @AppStorage(SettingsKeys.hlsReconnectFailTimeoutSeconds) private var hlsReconnectFailTimeoutSeconds: Int = 90
+    @AppStorage(SettingsKeys.hoverHelpEnabled) private var hoverHelpEnabled: Bool = true
 
     @State private var selectedSettingsSection: SettingsSection? = .download
     @State private var alertMessage: String = ""
@@ -83,7 +84,7 @@ struct ToolsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .controlSize(.small)
+        .controlSize(.regular)
         .onAppear {
             toolManager.refresh()
         }
@@ -133,7 +134,10 @@ struct ToolsView: View {
     private var activeSectionContent: some View {
         switch currentSettingsSection {
         case .download:
-            downloadDefaultsCard
+            VStack(alignment: .leading, spacing: 10) {
+                interfaceHelpCard
+                downloadDefaultsCard
+            }
         case .tools:
             toolsStatusSection
         case .update:
@@ -141,8 +145,22 @@ struct ToolsView: View {
         }
     }
 
+    private var interfaceHelpCard: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                settingRow(title: "마우스 오버 설명") {
+                    Toggle("사용", isOn: $hoverHelpEnabled)
+                        .labelsHidden()
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            Text("화면 도움말")
+        }
+    }
+
     private var downloadDefaultsCard: some View {
-        GroupBox("다운로드 기본값") {
+        GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 settingRow(title: "포맷 프리셋") {
                     Picker("포맷 프리셋", selection: defaultPreset) {
@@ -152,11 +170,6 @@ struct ToolsView: View {
                     }
                     .labelsHidden()
                 }
-
-                Text((defaultPreset.wrappedValue).shortDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
 
                 Divider()
 
@@ -180,22 +193,12 @@ struct ToolsView: View {
                     .labelsHidden()
                 }
 
-                Text(mergeBehavior.wrappedValue.shortDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
-
                 Divider()
 
                 settingRow(title: "m3u8 재접속") {
                     Toggle("자동 재접속", isOn: $hlsAutoReconnectEnabled)
                         .labelsHidden()
                 }
-
-                Text("네트워크가 끊기면 ffmpeg 재접속을 자동으로 시도합니다.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
 
                 settingRow(title: "자동 중지(초)") {
                     Stepper(value: $hlsReconnectFailTimeoutSeconds, in: 15...1800, step: 15) {
@@ -204,19 +207,16 @@ struct ToolsView: View {
                     }
                     .disabled(!hlsAutoReconnectEnabled)
                 }
-
-                Text("지정 시간 이상 데이터 수신이 없으면 m3u8 다운로드를 자동 중지합니다.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 2)
             }
             .padding(.top, 4)
+        } label: {
+            Text("다운로드 기본값")
         }
     }
 
     private var toolsStatusSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            GroupBox("도구 설치/제거") {
+            GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
                     managedToolRow(
                         title: "Homebrew",
@@ -250,22 +250,20 @@ struct ToolsView: View {
                     )
                 }
                 .padding(.top, 4)
+            } label: {
+                Text("도구 설치/제거")
             }
 
-            GroupBox("터미널 설치 방법") {
+            GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Homebrew는 Terminal.app에서 설치/제거하는 방식이 가장 안정적입니다. yt-dlp와 ffmpeg도 앱 내부 설치가 실패하면 아래 명령을 사용하세요.")
-                        .font(.callout)
-                    Text("명령 실행 후 상단의 다시 검사 또는 각 항목의 검사 버튼으로 설치 여부를 확인하세요.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
                     commandRow(title: "1) Homebrew 설치(최초 1회)", command: homebrewInstallCommand)
                     commandRow(title: "2) Homebrew 제거", command: homebrewUninstallCommand)
                     commandRow(title: "3) yt-dlp 설치", command: "brew install yt-dlp")
                     commandRow(title: "4) ffmpeg 설치", command: "brew install ffmpeg")
                 }
                 .padding(.top, 4)
+            } label: {
+                Text("터미널 설치 방법")
             }
 
             toolActionConsoleCard
@@ -316,7 +314,8 @@ struct ToolsView: View {
                     CopyButton(
                         title: "로그 복사",
                         valueProvider: { toolManager.toolActionLog },
-                        disabled: toolManager.toolActionLog.isEmpty
+                        disabled: toolManager.toolActionLog.isEmpty,
+                        showsInstantHelp: false
                     )
                     Spacer()
                 }
@@ -326,12 +325,8 @@ struct ToolsView: View {
     }
 
     private var updateTroubleshootingCard: some View {
-        GroupBox("업데이트 / 문제 해결") {
+        GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                Text("유튜브 구조가 바뀌면 yt-dlp 업데이트가 필요할 수 있습니다. 문제가 생기면 먼저 yt-dlp를 최신으로 업데이트하세요.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
                 Toggle("앱 실행 시 yt-dlp 업데이트 확인", isOn: $ytDlpCheckUpdateOnLaunch)
                     .font(.caption)
 
@@ -350,7 +345,11 @@ struct ToolsView: View {
                     .foregroundStyle(.secondary)
 
                 HStack(spacing: 8) {
-                    CopyButton(title: "업데이트 명령 복사", valueProvider: { ytDlpUpgradeCommand })
+                    CopyButton(
+                        title: "업데이트 명령 복사",
+                        valueProvider: { ytDlpUpgradeCommand },
+                        showsInstantHelp: false
+                    )
 
                     Button("업데이트 후 다시 검사") {
                         alertMessage = "Terminal.app을 열어 'brew upgrade yt-dlp'를 실행한 뒤 확인하세요. 지금 설치 여부를 다시 확인합니다."
@@ -361,6 +360,8 @@ struct ToolsView: View {
                 }
             }
             .padding(.top, 4)
+        } label: {
+            Text("업데이트 / 문제 해결")
         }
     }
 
@@ -461,7 +462,11 @@ struct ToolsView: View {
 
                 Spacer(minLength: 8)
 
-                CopyButton(title: "복사", valueProvider: { command })
+                CopyButton(
+                    title: "복사",
+                    valueProvider: { command },
+                    showsInstantHelp: false
+                )
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -514,6 +519,17 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .download: return "arrow.down.circle"
         case .tools: return "wrench.and.screwdriver"
         case .update: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .download:
+            return "다운로드 포맷, 파일명 충돌 처리, 병합, m3u8 재접속 기본값을 설정합니다."
+        case .tools:
+            return "yt-dlp, ffmpeg, Homebrew 설치 상태를 확인하고 설치 또는 제거를 실행합니다."
+        case .update:
+            return "yt-dlp 업데이트 확인과 문제 해결용 명령을 확인합니다."
         }
     }
 }

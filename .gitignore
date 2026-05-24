@@ -6,9 +6,11 @@ dist/
 YouTubeDownloader.app/
 YouTubeDownloader-AppleSilicon.dmg
 Video Simple Toolkit.app/
+VideoSimpleToolkitEditor.app/
 Video Simple Toolkit-AppleSilicon.dmg
 *.dSYM/
 DerivedData/
+.DerivedData/
 *.xcarchive
 *.xcresult
 xcuserdata/
