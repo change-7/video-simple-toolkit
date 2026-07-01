@@ -36,7 +36,7 @@ struct EditorWorkspaceView: View {
     @StateObject private var store = EditorTimelineStore()
     @StateObject private var exportManager = EditorExportManager()
     @StateObject private var mediaDownloadManager = DownloadManager()
-    @AppStorage(SettingsKeys.defaultDownloadPreset) private var defaultDownloadPresetRaw: String = DownloadPreset.macCompatibleMP4.rawValue
+    @AppStorage(SettingsKeys.defaultDownloadPreset) private var defaultDownloadPresetRaw: String = DownloadPreset.bestQualityMP4.rawValue
     @AppStorage(SettingsKeys.defaultFilenameConflictPolicy) private var defaultFilenameConflictPolicyRaw: String = FilenameConflictPolicy.autoRename.rawValue
     @AppStorage(SettingsKeys.hlsAutoReconnectEnabled) private var hlsAutoReconnectEnabled: Bool = true
     @AppStorage(SettingsKeys.hlsReconnectFailTimeoutSeconds) private var hlsReconnectFailTimeoutSeconds: Int = 90
@@ -1160,7 +1160,7 @@ struct EditorWorkspaceView: View {
     }
 
     private var selectedDownloadPreset: DownloadPreset {
-        DownloadPreset(rawValue: defaultDownloadPresetRaw) ?? .macCompatibleMP4
+        DownloadPreset.userSelectableMode(rawValue: defaultDownloadPresetRaw)
     }
 
     private var selectedDownloadConflictPolicy: FilenameConflictPolicy {

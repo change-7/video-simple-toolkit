@@ -4,7 +4,7 @@ struct ToolsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var toolManager: ToolManager
 
-    @AppStorage(SettingsKeys.defaultDownloadPreset) private var defaultDownloadPresetRaw: String = DownloadPreset.macCompatibleMP4.rawValue
+    @AppStorage(SettingsKeys.defaultDownloadPreset) private var defaultDownloadPresetRaw: String = DownloadPreset.bestQualityMP4.rawValue
     @AppStorage(SettingsKeys.defaultFilenameConflictPolicy) private var defaultFilenameConflictPolicyRaw: String = FilenameConflictPolicy.autoRename.rawValue
     @AppStorage(SettingsKeys.mergeBehavior) private var mergeBehaviorRaw: String = MergeBehavior.compatibilityPreferred.rawValue
     @AppStorage(SettingsKeys.ytDlpCheckUpdateOnLaunch) private var ytDlpCheckUpdateOnLaunch: Bool = true
@@ -22,7 +22,7 @@ struct ToolsView: View {
 
     private var defaultPreset: Binding<DownloadPreset> {
         Binding(
-            get: { DownloadPreset(rawValue: defaultDownloadPresetRaw) ?? .macCompatibleMP4 },
+            get: { DownloadPreset.userSelectableMode(rawValue: defaultDownloadPresetRaw) },
             set: { defaultDownloadPresetRaw = $0.rawValue }
         )
     }
@@ -46,26 +46,41 @@ struct ToolsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(ToolkitTheme.accent.opacity(0.14))
+                    Image(systemName: currentSettingsSection.iconName)
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(ToolkitTheme.accent)
+                }
+                .frame(width: 40, height: 40)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text("설정")
                         .font(.title3.bold())
-                    Text("도구 / 업데이트")
+                    Text(currentSettingsSection.detail)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 Spacer()
 
                 HStack(spacing: 6) {
-                    Button("다시 검사") {
+                    Button {
                         toolManager.refresh(force: true)
+                    } label: {
+                        Label("다시 검사", systemImage: "arrow.clockwise")
                     }
 
-                    Button("닫기") {
+                    Button {
                         dismiss()
+                    } label: {
+                        Label("닫기", systemImage: "xmark")
                     }
+                    .keyboardShortcut(.cancelAction)
                 }
             }
 
@@ -82,9 +97,12 @@ struct ToolsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .controlSize(.regular)
+        .tint(ToolkitTheme.accent)
+        .groupBoxStyle(.toolkitPanel)
+        .background(ToolkitWindowBackground())
         .onAppear {
             toolManager.refresh()
         }
@@ -103,10 +121,15 @@ struct ToolsView: View {
                         selectedSettingsSection = section
                     } label: {
                         HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(currentSettingsSection == section ? ToolkitTheme.accent : Color.clear)
+                                .frame(width: 3, height: 18)
+
                             Image(systemName: section.iconName)
-                                .frame(width: 14)
+                                .foregroundStyle(currentSettingsSection == section ? ToolkitTheme.accent : Color.secondary)
+                                .frame(width: 16)
                             Text(section.title)
-                                .font(.callout)
+                                .font(.callout.weight(currentSettingsSection == section ? .semibold : .regular))
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 8)
@@ -117,8 +140,9 @@ struct ToolsView: View {
                     .buttonStyle(.plain)
                     .background(
                         RoundedRectangle(cornerRadius: 7)
-                            .fill(currentSettingsSection == section ? Color.accentColor.opacity(0.18) : Color.clear)
+                            .fill(currentSettingsSection == section ? ToolkitTheme.selectedFill : Color.clear)
                     )
+                    .foregroundStyle(currentSettingsSection == section ? Color.primary : Color.secondary)
                 }
             }
             .padding(4)
@@ -126,7 +150,11 @@ struct ToolsView: View {
         .frame(width: 172)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color.secondary.opacity(0.06))
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(ToolkitTheme.hairline, lineWidth: 1)
         )
     }
 
@@ -164,7 +192,7 @@ struct ToolsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 settingRow(title: "포맷 프리셋") {
                     Picker("포맷 프리셋", selection: defaultPreset) {
-                        ForEach(DownloadPreset.allCases) { preset in
+                        ForEach(DownloadPreset.userSelectableModes) { preset in
                             Text(preset.title).tag(preset)
                         }
                     }
@@ -271,7 +299,7 @@ struct ToolsView: View {
     }
 
     private var toolActionConsoleCard: some View {
-        GroupBox("설치/제거 실행 로그") {
+        GroupBox {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     if toolManager.isToolActionRunning {
@@ -307,7 +335,11 @@ struct ToolsView: View {
                 .frame(minHeight: 70, maxHeight: 130)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.secondary.opacity(0.06))
+                        .fill(ToolkitTheme.insetFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(ToolkitTheme.hairline, lineWidth: 1)
                 )
 
                 HStack {
@@ -321,6 +353,8 @@ struct ToolsView: View {
                 }
             }
             .padding(.top, 4)
+        } label: {
+            Label("설치/제거 실행 로그", systemImage: "terminal")
         }
     }
 
@@ -403,12 +437,12 @@ struct ToolsView: View {
     private func statusBadge(isInstalled: Bool) -> some View {
         Text(isInstalled ? "설치됨" : "미설치")
             .font(.caption.weight(.semibold))
-            .foregroundStyle(isInstalled ? Color.green : Color.red)
+            .foregroundStyle(isInstalled ? Color.green : Color.orange)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
                 Capsule()
-                    .fill((isInstalled ? Color.green : Color.red).opacity(0.12))
+                    .fill((isInstalled ? Color.green : Color.orange).opacity(0.12))
             )
     }
 
@@ -472,7 +506,11 @@ struct ToolsView: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.secondary.opacity(0.08))
+                    .fill(ToolkitTheme.insetFill)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(ToolkitTheme.hairline, lineWidth: 1)
             )
         }
     }

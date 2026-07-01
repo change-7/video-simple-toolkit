@@ -379,7 +379,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
 			};
 			name = Release;
 		};
@@ -397,7 +397,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pdg.YouTubeDownloaderTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YouTubeDownloader.app/Contents/MacOS/YouTubeDownloader";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoSimpleToolkit.app/Contents/MacOS/VideoSimpleToolkit";
 			};
 			name = Debug;
 		};

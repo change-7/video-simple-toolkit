@@ -1,5 +1,5 @@
 import XCTest
-@testable import YouTubeDownloader
+@testable import VideoSimpleToolkit
 
 final class DownloadLineHeuristicsTests: XCTestCase {
     func testParseProgressExtractsPercentSizeSpeedEta() {
@@ -72,5 +72,28 @@ final class DownloadLineHeuristicsTests: XCTestCase {
             ),
             "/Users/test/Movies/merged.mp4"
         )
+    }
+
+    func testSubtitleRenderPlannerKeepsVideoFilesOnSourceVideoWhenProbeMissesStream() {
+        let mediaURL = URL(fileURLWithPath: "/tmp/source-video.mp4")
+        let subtitleURL = URL(fileURLWithPath: "/tmp/subtitle.srt")
+        let outputURL = URL(fileURLWithPath: "/tmp/output.mp4")
+        let usesSourceVideo = SubtitleRenderPlanner.shouldUseSourceVideo(
+            for: mediaURL,
+            detectedHasVideoStream: false
+        )
+        let arguments = SubtitleRenderPlanner.renderArguments(
+            mediaURL: mediaURL,
+            subtitleURL: subtitleURL,
+            outputURL: outputURL,
+            subtitleFontSize: 36,
+            usesSourceVideo: usesSourceVideo
+        )
+
+        XCTAssertTrue(usesSourceVideo)
+        XCTAssertFalse(arguments.contains("color=c=black:s=1280x720:r=30"))
+        XCTAssertTrue(arguments.contains("-map"))
+        XCTAssertTrue(arguments.contains("0:v:0"))
+        XCTAssertFalse(arguments.contains("1:a:0"))
     }
 }
