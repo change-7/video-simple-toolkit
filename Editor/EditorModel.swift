@@ -113,6 +113,8 @@ struct EditorTransform: Codable, Hashable {
     var scaleY: Double
     var rotationDegrees: Double
     var opacity: Double
+    // Optional keeps projects saved before the subtitle style control readable.
+    var subtitleBackgroundOpacity: Double? = 0.45
     /// Normalized source points used for perspective correction. The four
     /// picked points are mapped to the full export canvas.
     var perspective: PerspectiveQuad
@@ -124,8 +126,13 @@ struct EditorTransform: Codable, Hashable {
         scaleY: 1,
         rotationDegrees: 0,
         opacity: 1,
+        subtitleBackgroundOpacity: 0.45,
         perspective: .unit
     )
+
+    var resolvedSubtitleBackgroundOpacity: Double {
+        min(max(subtitleBackgroundOpacity ?? 0.45, 0), 1)
+    }
 }
 
 struct EditorMediaAsset: Identifiable, Hashable, Codable {
@@ -1598,6 +1605,7 @@ final class EditorTimelineStore: ObservableObject {
             scaleY: 1,
             rotationDegrees: 0,
             opacity: 1,
+            subtitleBackgroundOpacity: 0.45,
             perspective: .unit
         )
     }

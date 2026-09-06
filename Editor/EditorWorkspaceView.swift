@@ -526,9 +526,12 @@ struct EditorWorkspaceView: View {
                         Text(textClip.text)
                             .font(.system(size: max(14, 34 * textClip.transform.scaleY), weight: .semibold))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.black.opacity(0.45))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.black.opacity(textClip.transform.resolvedSubtitleBackgroundOpacity))
+                            )
                             .offset(
                                 x: textClip.transform.positionX * geometry.size.width,
                                 y: textClip.transform.positionY * geometry.size.height
@@ -1066,6 +1069,16 @@ struct EditorWorkspaceView: View {
                     if clip.kind == .text || clip.kind == .subtitle {
                         inspectorSection(title: "Subtitle Sync") {
                             subtitleSyncControls
+                        }
+
+                        inspectorSection(title: "Subtitle Style") {
+                            inspectorSlider(
+                                "배경 불투명도",
+                                value: subtitleBackgroundOpacityBinding,
+                                range: 0...1,
+                                valueText: { "\(Int(($0 * 100).rounded()))%" },
+                                help: "자막 텍스트 뒤 검은색 배경의 불투명도입니다. 0%는 투명하고 100%는 불투명합니다."
+                            )
                         }
                     }
 
@@ -1707,17 +1720,20 @@ struct EditorWorkspaceView: View {
     private func inspectorSlider(
         _ title: String,
         value: Binding<Double>,
-        range: ClosedRange<Double>
+        range: ClosedRange<Double>,
+        valueText: ((Double) -> String)? = nil,
+        help: String? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(title)
                 Spacer()
-                Text(String(format: "%.2f", value.wrappedValue))
+                Text(valueText?(value.wrappedValue) ?? String(format: "%.2f", value.wrappedValue))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
             .font(.caption)
+            .help(help ?? "")
             Slider(
                 value: value,
                 in: range,
@@ -1738,6 +1754,17 @@ struct EditorWorkspaceView: View {
             set: { newValue in
                 var transform = store.selectedClip?.transform ?? .identity
                 transform[keyPath: keyPath] = newValue
+                store.updateSelectedTransform(transform)
+            }
+        )
+    }
+
+    private var subtitleBackgroundOpacityBinding: Binding<Double> {
+        Binding(
+            get: { store.selectedClip?.transform.resolvedSubtitleBackgroundOpacity ?? 0.45 },
+            set: { newValue in
+                var transform = store.selectedClip?.transform ?? .identity
+                transform.subtitleBackgroundOpacity = min(max(newValue, 0), 1)
                 store.updateSelectedTransform(transform)
             }
         )
@@ -2290,9 +2317,12 @@ private struct EditorClipPreview: View {
                 Text(clip.text)
                     .font(.system(size: max(14, 34 * clip.transform.scaleY), weight: .semibold))
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Color.black.opacity(0.45))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.black.opacity(clip.transform.resolvedSubtitleBackgroundOpacity))
+                    )
             case .subtitle:
                 VStack(spacing: 8) {
                     Image(systemName: "captions.bubble")

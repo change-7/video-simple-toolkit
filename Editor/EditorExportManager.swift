@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 enum EditorExportPreset: String, CaseIterable, Identifiable {
@@ -113,6 +114,331 @@ struct EditorExportRequest {
     }
 }
 
+struct RoundedSubtitleCue {
+    let start: Double
+    let end: Double
+    let text: String
+}
+
+enum RoundedSubtitleASSGenerator {
+    private struct Event {
+        let cue: RoundedSubtitleCue
+        let center: CGPoint
+        let fontSize: CGFloat
+        let fadeInDuration: Double
+        let fadeOutDuration: Double
+    }
+
+    private static let horizontalPadding: CGFloat = 8
+    private static let verticalPadding: CGFloat = 4
+    private static let cornerRadius: CGFloat = 6
+
+    static func writeSubtitleFile(
+        sourceURL: URL,
+        outputDirectory: URL,
+        fontSize: Double,
+        backgroundOpacity: Double
+    ) -> URL? {
+        guard let rawText = loadText(from: sourceURL) else { return nil }
+        let cues = parseCues(rawText, fileExtension: sourceURL.pathExtension)
+        guard !cues.isEmpty else { return nil }
+
+        let content = makeASSContent(
+            events: cues.map {
+                Event(
+                    cue: $0,
+                    center: .zero,
+                    fontSize: CGFloat(max(8, Int(fontSize.rounded()))),
+                    fadeInDuration: 0,
+                    fadeOutDuration: 0
+                )
+            },
+            canvasSize: CGSize(width: 1280, height: 720),
+            backgroundOpacity: backgroundOpacity,
+            subtitlePosition: true
+        )
+
+        let outputURL = outputDirectory.appendingPathComponent("rounded-subtitles.ass")
+        guard (try? content.write(to: outputURL, atomically: true, encoding: .utf8)) != nil else {
+            return nil
+        }
+        return outputURL
+    }
+
+    static func writeEditorFile(
+        overlays: [EditorExportText],
+        canvasSize: CGSize,
+        outputDirectory: URL
+    ) throws -> URL {
+        let width = max(canvasSize.width, 2)
+        let height = max(canvasSize.height, 2)
+        let events = overlays.map { overlay in
+            Event(
+                cue: RoundedSubtitleCue(
+                    start: overlay.startTime,
+                    end: overlay.startTime + overlay.duration,
+                    text: overlay.text
+                ),
+                center: CGPoint(
+                    x: width / 2 + overlay.transform.positionX * width,
+                    y: height / 2 + overlay.transform.positionY * height
+                ),
+                fontSize: CGFloat(max(16, Int((34 * overlay.transform.scaleY).rounded()))),
+                fadeInDuration: overlay.fadeInDuration,
+                fadeOutDuration: overlay.fadeOutDuration
+            )
+        }
+
+        let content = makeASSContent(
+            events: events,
+            canvasSize: CGSize(width: width, height: height),
+            backgroundOpacity: nil,
+            subtitlePosition: false,
+            overlayOpacities: overlays.map { $0.transform.resolvedSubtitleBackgroundOpacity },
+            textOpacities: overlays.map { $0.transform.opacity }
+        )
+
+        let outputURL = outputDirectory.appendingPathComponent("rounded-text-overlays.ass")
+        try content.write(to: outputURL, atomically: true, encoding: .utf8)
+        return outputURL
+    }
+
+    static func makeSubtitleASSContent(
+        cues: [RoundedSubtitleCue],
+        fontSize: Double,
+        backgroundOpacity: Double
+    ) -> String {
+        makeASSContent(
+            events: cues.map {
+                Event(
+                    cue: $0,
+                    center: .zero,
+                    fontSize: CGFloat(max(8, Int(fontSize.rounded()))),
+                    fadeInDuration: 0,
+                    fadeOutDuration: 0
+                )
+            },
+            canvasSize: CGSize(width: 1280, height: 720),
+            backgroundOpacity: backgroundOpacity,
+            subtitlePosition: true
+        )
+    }
+
+    private static func makeASSContent(
+        events: [Event],
+        canvasSize: CGSize,
+        backgroundOpacity: Double?,
+        subtitlePosition: Bool,
+        overlayOpacities: [Double] = [],
+        textOpacities: [Double] = []
+    ) -> String {
+        let width = max(Int(canvasSize.width.rounded()), 2)
+        let height = max(Int(canvasSize.height.rounded()), 2)
+        let subtitleFontSize = events.first?.fontSize ?? 16
+        let subtitleBottomMargin: CGFloat = max(25, subtitleFontSize * 1.5)
+        let defaultOpacity = min(max(backgroundOpacity ?? 0.45, 0), 1)
+        var lines = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: \(width)",
+            "PlayResY: \(height)",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Subtitle,Arial,\(formatASSNumber(subtitleFontSize)),&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+        ]
+
+        for (index, event) in events.enumerated() {
+            let measured = textMetrics(for: event.cue.text, fontSize: event.fontSize)
+            let boxWidth = measured.width + horizontalPadding * 2
+            let boxHeight = measured.height + verticalPadding * 2
+            let center: CGPoint
+            if subtitlePosition {
+                center = CGPoint(
+                    x: canvasSize.width / 2,
+                    y: canvasSize.height - subtitleBottomMargin - measured.height / 2
+                )
+            } else {
+                center = event.center
+            }
+
+            let backgroundOpacity = subtitlePosition
+                ? defaultOpacity
+                : min(max(index < overlayOpacities.count ? overlayOpacities[index] : defaultOpacity, 0), 1)
+            let textOpacity = subtitlePosition
+                ? 1
+                : min(max(index < textOpacities.count ? textOpacities[index] : 1, 0), 1)
+            let backgroundAlpha = alphaHex(for: backgroundOpacity)
+            let textAlpha = alphaHex(for: textOpacity)
+            let fade = fadeTag(inDuration: event.fadeInDuration, outDuration: event.fadeOutDuration)
+            let position = "\\an5\\pos(\(formatASSNumber(center.x)),\(formatASSNumber(center.y)))"
+            let backgroundTags = "{\(position)\\p1\\c&H000000&\\1a&H\(backgroundAlpha)&\(fade)}"
+            let textTags = "{\(position)\\fs\(formatASSNumber(event.fontSize))\\bord0\\shad0\\1c&HFFFFFF&\\1a&H\(textAlpha)&\\q2\(fade)}"
+
+            lines.append("Dialogue: 0,\(formatASSTime(event.cue.start)),\(formatASSTime(event.cue.end)),Subtitle,,0,0,0,,\(backgroundTags)\(roundedRectPath(width: boxWidth, height: boxHeight))")
+            lines.append("Dialogue: 1,\(formatASSTime(event.cue.start)),\(formatASSTime(event.cue.end)),Subtitle,,0,0,0,,\(textTags)\(escapeASSText(event.cue.text))")
+        }
+
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func parseCues(_ rawText: String, fileExtension: String) -> [RoundedSubtitleCue] {
+        switch fileExtension.lowercased() {
+        case "srt", "vtt":
+            return parseLineCues(rawText)
+        case "ass", "ssa":
+            return parseASSCues(rawText)
+        default:
+            return []
+        }
+    }
+
+    private static func parseLineCues(_ rawText: String) -> [RoundedSubtitleCue] {
+        let normalized = rawText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        return normalized.components(separatedBy: "\n\n").compactMap { block in
+            let lines = block.components(separatedBy: "\n")
+            guard let timingIndex = lines.firstIndex(where: { $0.contains("-->") }) else { return nil }
+            let timingParts = lines[timingIndex].components(separatedBy: "-->")
+            guard timingParts.count >= 2,
+                  let start = parseTimestamp(timingParts[0]),
+                  let end = parseTimestamp(timingParts[1]) else { return nil }
+
+            let text = cleanText(lines.dropFirst(timingIndex + 1).joined(separator: "\n"))
+            guard start < end, !text.isEmpty else { return nil }
+            return RoundedSubtitleCue(start: start, end: end, text: text)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private static func parseASSCues(_ rawText: String) -> [RoundedSubtitleCue] {
+        rawText.components(separatedBy: .newlines).compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Dialogue:") else { return nil }
+            let components = trimmed.dropFirst("Dialogue:".count).split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+            guard components.count >= 9,
+                  let start = parseTimestamp(components[1]),
+                  let end = parseTimestamp(components[2]) else { return nil }
+
+            let text = cleanText(components.dropFirst(9).joined(separator: ",").replacingOccurrences(of: "\\N", with: "\n").replacingOccurrences(of: "\\n", with: "\n"))
+            guard start < end, !text.isEmpty else { return nil }
+            return RoundedSubtitleCue(start: start, end: end, text: text)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private static func loadText(from url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(data: data, encoding: .utf8) ??
+            String(data: data, encoding: .unicode) ??
+            String(data: data, encoding: .utf16) ??
+            String(data: data, encoding: .utf16LittleEndian) ??
+            String(data: data, encoding: .utf16BigEndian)
+    }
+
+    private static func parseTimestamp(_ rawValue: String) -> Double? {
+        let token = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .first
+            .map(String.init) ?? ""
+        let components = token.replacingOccurrences(of: ",", with: ".").split(separator: ":")
+        guard components.count == 2 || components.count == 3,
+              let seconds = Double(components.last.map(String.init) ?? "") else { return nil }
+
+        if components.count == 2 {
+            return (Double(components[0]) ?? 0) * 60 + seconds
+        }
+        return (Double(components[0]) ?? 0) * 3600 + (Double(components[1]) ?? 0) * 60 + seconds
+    }
+
+    private static func cleanText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\{.*?\\}", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func textMetrics(for text: String, fontSize: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let lines = text.components(separatedBy: "\n")
+        let widths = lines.map {
+            NSAttributedString(string: $0, attributes: [.font: font]).size().width
+        }
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        return CGSize(
+            width: max(widths.max() ?? 0, 1),
+            height: max(lineHeight * CGFloat(max(lines.count, 1)), lineHeight)
+        )
+    }
+
+    private static func roundedRectPath(width: CGFloat, height: CGFloat) -> String {
+        let radius = min(cornerRadius, min(width, height) / 2)
+        let curve = radius * 0.5522848
+        let left = -width / 2
+        let right = width / 2
+        let top = -height / 2
+        let bottom = height / 2
+        func point(_ x: CGFloat, _ y: CGFloat) -> String {
+            "\(formatASSNumber(x)) \(formatASSNumber(y))"
+        }
+
+        return [
+            "m \(point(left + radius, top))",
+            "l \(point(right - radius, top))",
+            "b \(point(right - radius + curve, top)) \(point(right, top + radius - curve)) \(point(right, top + radius))",
+            "l \(point(right, bottom - radius))",
+            "b \(point(right, bottom - radius + curve)) \(point(right - radius + curve, bottom)) \(point(right - radius, bottom))",
+            "l \(point(left + radius, bottom))",
+            "b \(point(left + radius - curve, bottom)) \(point(left, bottom - radius + curve)) \(point(left, bottom - radius))",
+            "l \(point(left, top + radius))",
+            "b \(point(left, top + radius - curve)) \(point(left + radius - curve, top)) \(point(left + radius, top))"
+        ].joined(separator: " ")
+    }
+
+    private static func escapeASSText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "{", with: "\\{")
+            .replacingOccurrences(of: "}", with: "\\}")
+            .replacingOccurrences(of: "\r\n", with: "\\N")
+            .replacingOccurrences(of: "\r", with: "\\N")
+            .replacingOccurrences(of: "\n", with: "\\N")
+    }
+
+    private static func alphaHex(for opacity: Double) -> String {
+        String(format: "%02X", Int(((1 - min(max(opacity, 0), 1)) * 255).rounded()))
+    }
+
+    private static func fadeTag(inDuration: Double, outDuration: Double) -> String {
+        guard inDuration > 0.001 || outDuration > 0.001 else { return "" }
+        return "\\fad(\(Int((max(inDuration, 0) * 1000).rounded())),\(Int((max(outDuration, 0) * 1000).rounded())))"
+    }
+
+    private static func formatASSTime(_ seconds: Double) -> String {
+        let total = max(seconds, 0)
+        let hours = Int(total / 3600)
+        let minutes = Int(total / 60) % 60
+        let remainder = total - Double(hours * 3600 + minutes * 60)
+        return String(format: "%d:%02d:%05.2f", hours, minutes, remainder)
+    }
+
+    private static func formatASSNumber(_ value: CGFloat) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), Double(value))
+    }
+}
+
 final class EditorExportManager: ObservableObject {
     private struct StepResult {
         let terminationStatus: Int32
@@ -151,7 +477,33 @@ final class EditorExportManager: ObservableObject {
         }
 
         workerQueue.async {
-            let arguments = self.exportArguments(request: request, outputURL: outputURL)
+            let temporaryDirectory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("editor-export-\(UUID().uuidString)", isDirectory: true)
+
+            do {
+                try FileManager.default.createDirectory(
+                    at: temporaryDirectory,
+                    withIntermediateDirectories: true,
+                    attributes: nil
+                )
+            } catch {
+                self.finishFailure(message: "임시 작업 폴더를 만들지 못했습니다.")
+                return
+            }
+
+            let arguments: [String]
+            do {
+                arguments = try self.exportArguments(
+                    request: request,
+                    outputURL: outputURL,
+                    temporaryDirectory: temporaryDirectory
+                )
+            } catch {
+                self.cleanupTemporaryDirectory(temporaryDirectory)
+                self.finishFailure(message: "자막 오버레이를 준비하지 못했습니다.")
+                return
+            }
+
             let result = self.runExportStep(
                 executableURL: request.ffmpegURL,
                 arguments: arguments,
@@ -159,11 +511,13 @@ final class EditorExportManager: ObservableObject {
             )
 
             if result.wasCancelled {
+                self.cleanupTemporaryDirectory(temporaryDirectory)
                 self.finishCanceled()
                 return
             }
 
             guard result.terminationStatus == 0 else {
+                self.cleanupTemporaryDirectory(temporaryDirectory)
                 self.finishFailure(message: result.message ?? "ffmpeg 출력에 실패했습니다.")
                 return
             }
@@ -174,10 +528,12 @@ final class EditorExportManager: ObservableObject {
             )
 
             guard validation.isValid else {
+                self.cleanupTemporaryDirectory(temporaryDirectory)
                 self.finishFailure(message: validation.message)
                 return
             }
 
+            self.cleanupTemporaryDirectory(temporaryDirectory)
             self.finishSuccess(outputURL: outputURL)
         }
     }
@@ -197,10 +553,24 @@ final class EditorExportManager: ObservableObject {
         stateQueue.sync { didCancel }
     }
 
-    private func exportArguments(request: EditorExportRequest, outputURL: URL) -> [String] {
+    private func exportArguments(
+        request: EditorExportRequest,
+        outputURL: URL,
+        temporaryDirectory: URL
+    ) throws -> [String] {
         let width = evenDimension(Int(request.renderSize.width.rounded()))
         let height = evenDimension(Int(request.renderSize.height.rounded()))
         let fps = max(request.frameRate, 1)
+        let roundedSubtitleURL: URL?
+        if request.textOverlays.isEmpty {
+            roundedSubtitleURL = nil
+        } else {
+            roundedSubtitleURL = try RoundedSubtitleASSGenerator.writeEditorFile(
+                overlays: request.textOverlays,
+                canvasSize: CGSize(width: width, height: height),
+                outputDirectory: temporaryDirectory
+            )
+        }
         var arguments = [
             "-y",
             "-hide_banner",
@@ -244,7 +614,13 @@ final class EditorExportManager: ObservableObject {
 
         arguments += [
             "-filter_complex",
-            filterComplex(request: request, width: width, height: height, fps: fps),
+            filterComplex(
+                request: request,
+                width: width,
+                height: height,
+                fps: fps,
+                roundedSubtitleURL: roundedSubtitleURL
+            ),
             "-map", finalVideoMapName(textCount: request.textOverlays.count),
             "-map", finalAudioMapName(audioCount: request.audioClips.count),
             "-c:v", "libx264",
@@ -262,7 +638,13 @@ final class EditorExportManager: ObservableObject {
         return arguments
     }
 
-    private func filterComplex(request: EditorExportRequest, width: Int, height: Int, fps: Int) -> String {
+    private func filterComplex(
+        request: EditorExportRequest,
+        width: Int,
+        height: Int,
+        fps: Int,
+        roundedSubtitleURL: URL?
+    ) -> String {
         var parts: [String] = []
 
         if request.visualClips.isEmpty {
@@ -353,10 +735,10 @@ final class EditorExportManager: ObservableObject {
         }
 
         var currentVideo = "vcat"
-        for (index, text) in request.textOverlays.enumerated() {
-            let nextVideo = "vtext\(index)"
-            parts.append("[\(currentVideo)]\(drawTextFilter(text, width: width, height: height))[\(nextVideo)]")
-            currentVideo = nextVideo
+        if let roundedSubtitleURL {
+            let safePath = escapeSubtitleFilterPath(roundedSubtitleURL.path)
+            parts.append("[\(currentVideo)]subtitles='\(safePath)'[vtext0]")
+            currentVideo = "vtext0"
         }
 
         return parts.joined(separator: ";")
@@ -386,31 +768,8 @@ final class EditorExportManager: ObservableObject {
         ].joined(separator: ":")
     }
 
-    private func drawTextFilter(_ overlay: EditorExportText, width: Int, height: Int) -> String {
-        let text = escapedDrawText(overlay.text)
-        let fontSize = max(16, Int((34 * overlay.transform.scaleY).rounded()))
-        let xOffset = Int((overlay.transform.positionX * Double(width)).rounded())
-        let yOffset = Int((overlay.transform.positionY * Double(height)).rounded())
-        let start = formatSeconds(overlay.startTime)
-        let end = formatSeconds(overlay.startTime + overlay.duration)
-        let alpha = drawTextAlphaExpression(overlay)
-
-        return [
-            "drawtext=text='\(text)'",
-            "fontcolor=white@\(formatFilterNumber(clamped(overlay.transform.opacity, lower: 0, upper: 1)))",
-            "fontsize=\(fontSize)",
-            "x=(w-text_w)/2+\(xOffset)",
-            "y=(h-text_h)/2+\(yOffset)",
-            "box=1",
-            "boxcolor=black@0.45",
-            "boxborderw=12",
-            "alpha='\(alpha)'",
-            "enable='between(t,\(start),\(end))'"
-        ].joined(separator: ":")
-    }
-
     private func finalVideoMapName(textCount: Int) -> String {
-        textCount == 0 ? "[vcat]" : "[vtext\(textCount - 1)]"
+        textCount == 0 ? "[vcat]" : "[vtext0]"
     }
 
     private func finalAudioMapName(audioCount: Int) -> String {
@@ -469,29 +828,6 @@ final class EditorExportManager: ObservableObject {
             filters.append("afade=t=out:st=\(formatSeconds(max(clip.duration - clip.fadeOutDuration, 0))):d=\(formatSeconds(clip.fadeOutDuration))")
         }
         return filters.isEmpty ? "" : "," + filters.joined(separator: ",")
-    }
-
-    private func drawTextAlphaExpression(_ overlay: EditorExportText) -> String {
-        let start = formatSeconds(overlay.startTime)
-        let end = formatSeconds(overlay.startTime + overlay.duration)
-
-        if overlay.fadeInDuration > 0.001 && overlay.fadeOutDuration > 0.001 {
-            let fadeInEnd = formatSeconds(overlay.startTime + overlay.fadeInDuration)
-            let fadeOutStart = formatSeconds(overlay.startTime + max(overlay.duration - overlay.fadeOutDuration, 0))
-            return "if(lt(t,\(fadeInEnd)),(t-\(start))/\(formatSeconds(overlay.fadeInDuration)),if(gt(t,\(fadeOutStart)),(\(end)-t)/\(formatSeconds(overlay.fadeOutDuration)),1))"
-        }
-
-        if overlay.fadeInDuration > 0.001 {
-            let fadeInEnd = formatSeconds(overlay.startTime + overlay.fadeInDuration)
-            return "if(lt(t,\(fadeInEnd)),(t-\(start))/\(formatSeconds(overlay.fadeInDuration)),1)"
-        }
-
-        if overlay.fadeOutDuration > 0.001 {
-            let fadeOutStart = formatSeconds(overlay.startTime + max(overlay.duration - overlay.fadeOutDuration, 0))
-            return "if(gt(t,\(fadeOutStart)),(\(end)-t)/\(formatSeconds(overlay.fadeOutDuration)),1)"
-        }
-
-        return "1"
     }
 
     private func scaleExpression(multiplier: Double, axis: String) -> String {
@@ -687,14 +1023,11 @@ final class EditorExportManager: ObservableObject {
         return sanitized.isEmpty ? fallback : sanitized
     }
 
-    private func escapedDrawText(_ value: String) -> String {
-        value
+    private func escapeSubtitleFilterPath(_ path: String) -> String {
+        path
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: ":", with: "\\:")
             .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
     }
 
     private func formatSeconds(_ seconds: Double) -> String {
@@ -749,5 +1082,9 @@ final class EditorExportManager: ObservableObject {
             self.statusText = "출력 취소됨"
             self.userMessage = "출력을 취소했습니다."
         }
+    }
+
+    private func cleanupTemporaryDirectory(_ directory: URL) {
+        try? FileManager.default.removeItem(at: directory)
     }
 }

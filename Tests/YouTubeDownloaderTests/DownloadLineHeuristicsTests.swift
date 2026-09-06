@@ -86,7 +86,6 @@ final class DownloadLineHeuristicsTests: XCTestCase {
             mediaURL: mediaURL,
             subtitleURL: subtitleURL,
             outputURL: outputURL,
-            subtitleFontSize: 36,
             usesSourceVideo: usesSourceVideo
         )
 
@@ -96,4 +95,36 @@ final class DownloadLineHeuristicsTests: XCTestCase {
         XCTAssertTrue(arguments.contains("0:v:0"))
         XCTAssertFalse(arguments.contains("1:a:0"))
     }
+
+    func testSubtitleRenderPlannerUsesPreparedASSFilter() {
+        let arguments = SubtitleRenderPlanner.renderArguments(
+            mediaURL: URL(fileURLWithPath: "/tmp/source-video.mp4"),
+            subtitleURL: URL(fileURLWithPath: "/tmp/rounded-subtitles.ass"),
+            outputURL: URL(fileURLWithPath: "/tmp/output.mp4"),
+            usesSourceVideo: true
+        )
+
+        guard let filterIndex = arguments.firstIndex(of: "-vf"), arguments.indices.contains(filterIndex + 1) else {
+            XCTFail("subtitle video filter argument is missing")
+            return
+        }
+
+        let filter = arguments[filterIndex + 1]
+        XCTAssertEqual(filter, "subtitles='/tmp/rounded-subtitles.ass'")
+    }
+
+    func testRoundedSubtitleASSContentUsesVectorBackgroundWithNarrowPadding() {
+        let content = SubtitleVideoRoundedASSGenerator.makeSubtitleASSContent(
+            cues: [SubtitleVideoRoundedCue(start: 0, end: 2, text: "Rounded subtitle")],
+            fontSize: 16,
+            backgroundOpacity: 0.45
+        )
+
+        XCTAssertTrue(content.contains("\\p1"))
+        XCTAssertTrue(content.contains("\\an5\\pos("))
+        XCTAssertTrue(content.contains("m -"))
+        XCTAssertTrue(content.contains(" b "))
+        XCTAssertFalse(content.contains("BorderStyle=3"))
+    }
+
 }

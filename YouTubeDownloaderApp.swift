@@ -9,7 +9,7 @@ struct YouTubeDownloaderApp: App {
         WindowGroup {
             MainView()
             .environmentObject(toolManager)
-            .frame(minWidth: 700, minHeight: 520)
+            .frame(width: 700, height: 760)
             .onAppear {
                 toolManager.refresh()
                 if ytDlpCheckUpdateOnLaunch {
@@ -17,6 +17,7 @@ struct YouTubeDownloaderApp: App {
                 }
             }
         }
+        .windowResizability(.contentSize)
     }
 }
 

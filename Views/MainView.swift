@@ -35,6 +35,13 @@ private struct YtDlpVideoIdentity {
     let videoID: String
 }
 
+private struct SubtitlePreviewCue: Identifiable {
+    let id = UUID()
+    let start: Double
+    let end: Double
+    let text: String
+}
+
 private enum MainContentTab: String, CaseIterable, Identifiable {
     case download = "다운로드"
     case merge = "영상 붙이기"
@@ -2016,12 +2023,10 @@ enum SubtitleRenderPlanner {
         mediaURL: URL,
         subtitleURL: URL,
         outputURL: URL,
-        subtitleFontSize: Double,
         usesSourceVideo: Bool
     ) -> [String] {
         let safePath = escapeSubtitleFilterPath(subtitleURL.path)
-        let fontSize = max(8, Int(subtitleFontSize.rounded()))
-        let subtitleFilter = "subtitles='\(safePath)':force_style='FontSize=\(fontSize)'"
+        let subtitleFilter = "subtitles='\(safePath)'"
 
         if usesSourceVideo {
             return [
@@ -2082,6 +2087,238 @@ enum SubtitleRenderPlanner {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: ":", with: "\\:")
             .replacingOccurrences(of: "'", with: "\\'")
+    }
+}
+
+struct SubtitleVideoRoundedCue {
+    let start: Double
+    let end: Double
+    let text: String
+}
+
+enum SubtitleVideoRoundedASSGenerator {
+    private struct Event {
+        let cue: SubtitleVideoRoundedCue
+        let fontSize: CGFloat
+    }
+
+    private static let horizontalPadding: CGFloat = 8
+    private static let verticalPadding: CGFloat = 4
+    private static let cornerRadius: CGFloat = 6
+
+    static func writeSubtitleFile(
+        sourceURL: URL,
+        outputDirectory: URL,
+        fontSize: Double,
+        backgroundOpacity: Double
+    ) -> URL? {
+        guard let rawText = loadText(from: sourceURL) else { return nil }
+        let cues = parseCues(rawText, fileExtension: sourceURL.pathExtension)
+        guard !cues.isEmpty else { return nil }
+
+        let content = makeASSContent(
+            events: cues.map { Event(cue: $0, fontSize: CGFloat(max(8, Int(fontSize.rounded())))) },
+            backgroundOpacity: backgroundOpacity
+        )
+        let outputURL = outputDirectory.appendingPathComponent("rounded-subtitles.ass")
+        guard (try? content.write(to: outputURL, atomically: true, encoding: .utf8)) != nil else {
+            return nil
+        }
+        return outputURL
+    }
+
+    static func makeSubtitleASSContent(
+        cues: [SubtitleVideoRoundedCue],
+        fontSize: Double,
+        backgroundOpacity: Double
+    ) -> String {
+        makeASSContent(
+            events: cues.map { Event(cue: $0, fontSize: CGFloat(max(8, Int(fontSize.rounded())))) },
+            backgroundOpacity: backgroundOpacity
+        )
+    }
+
+    private static func makeASSContent(events: [Event], backgroundOpacity: Double) -> String {
+        let width = 1280
+        let height = 720
+        let fontSize = events.first?.fontSize ?? 16
+        let bottomMargin = max(25, fontSize * 1.5)
+        let clampedOpacity = min(max(backgroundOpacity, 0), 1)
+        let backgroundAlpha = alphaHex(for: clampedOpacity)
+        var lines = [
+            "[Script Info]",
+            "ScriptType: v4.00+",
+            "PlayResX: \(width)",
+            "PlayResY: \(height)",
+            "WrapStyle: 2",
+            "ScaledBorderAndShadow: yes",
+            "",
+            "[V4+ Styles]",
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+            "Style: Subtitle,Arial,\(formatNumber(fontSize)),&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,0,0,0,1",
+            "",
+            "[Events]",
+            "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+        ]
+
+        for event in events {
+            let measured = textMetrics(for: event.cue.text, fontSize: event.fontSize)
+            let center = CGPoint(
+                x: CGFloat(width) / 2,
+                y: CGFloat(height) - bottomMargin - measured.height / 2
+            )
+            let boxWidth = measured.width + horizontalPadding * 2
+            let boxHeight = measured.height + verticalPadding * 2
+            let position = "\\an5\\pos(\(formatNumber(center.x)),\(formatNumber(center.y)))"
+            let backgroundTags = "{\(position)\\p1\\c&H000000&\\1a&H\(backgroundAlpha)&}"
+            let textTags = "{\(position)\\fs\(formatNumber(event.fontSize))\\bord0\\shad0\\1c&HFFFFFF&\\1a&H00&\\q2}"
+
+            lines.append("Dialogue: 0,\(formatTime(event.cue.start)),\(formatTime(event.cue.end)),Subtitle,,0,0,0,,\(backgroundTags)\(roundedRectPath(width: boxWidth, height: boxHeight))")
+            lines.append("Dialogue: 1,\(formatTime(event.cue.start)),\(formatTime(event.cue.end)),Subtitle,,0,0,0,,\(textTags)\(escapeText(event.cue.text))")
+        }
+
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func parseCues(_ rawText: String, fileExtension: String) -> [SubtitleVideoRoundedCue] {
+        switch fileExtension.lowercased() {
+        case "srt", "vtt": return parseLineCues(rawText)
+        case "ass", "ssa": return parseASSCues(rawText)
+        default: return []
+        }
+    }
+
+    private static func parseLineCues(_ rawText: String) -> [SubtitleVideoRoundedCue] {
+        let normalized = rawText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        return normalized.components(separatedBy: "\n\n").compactMap { block in
+            let lines = block.components(separatedBy: "\n")
+            guard let timingIndex = lines.firstIndex(where: { $0.contains("-->") }) else { return nil }
+            let timing = lines[timingIndex].components(separatedBy: "-->")
+            guard timing.count >= 2,
+                  let start = parseTimestamp(timing[0]),
+                  let end = parseTimestamp(timing[1]) else { return nil }
+            let text = cleanText(lines.dropFirst(timingIndex + 1).joined(separator: "\n"))
+            guard start < end, !text.isEmpty else { return nil }
+            return SubtitleVideoRoundedCue(start: start, end: end, text: text)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private static func parseASSCues(_ rawText: String) -> [SubtitleVideoRoundedCue] {
+        rawText.components(separatedBy: .newlines).compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Dialogue:") else { return nil }
+            let fields = trimmed.dropFirst("Dialogue:".count)
+                .split(separator: ",", omittingEmptySubsequences: false)
+                .map(String.init)
+            guard fields.count >= 9,
+                  let start = parseTimestamp(fields[1]),
+                  let end = parseTimestamp(fields[2]) else { return nil }
+            let text = cleanText(
+                fields.dropFirst(9)
+                    .joined(separator: ",")
+                    .replacingOccurrences(of: "\\N", with: "\n")
+                    .replacingOccurrences(of: "\\n", with: "\n")
+            )
+            guard start < end, !text.isEmpty else { return nil }
+            return SubtitleVideoRoundedCue(start: start, end: end, text: text)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private static func loadText(from url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return String(data: data, encoding: .utf8) ??
+            String(data: data, encoding: .unicode) ??
+            String(data: data, encoding: .utf16) ??
+            String(data: data, encoding: .utf16LittleEndian) ??
+            String(data: data, encoding: .utf16BigEndian)
+    }
+
+    private static func parseTimestamp(_ rawValue: String) -> Double? {
+        let token = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .first
+            .map(String.init) ?? ""
+        let components = token.replacingOccurrences(of: ",", with: ".").split(separator: ":")
+        guard components.count == 2 || components.count == 3,
+              let seconds = Double(components.last.map(String.init) ?? "") else { return nil }
+        if components.count == 2 {
+            return (Double(components[0]) ?? 0) * 60 + seconds
+        }
+        return (Double(components[0]) ?? 0) * 3600 + (Double(components[1]) ?? 0) * 60 + seconds
+    }
+
+    private static func cleanText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\{.*?\\}", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func textMetrics(for text: String, fontSize: CGFloat) -> CGSize {
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .semibold)
+        let lines = text.components(separatedBy: "\n")
+        let widths = lines.map { NSAttributedString(string: $0, attributes: [.font: font]).size().width }
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        return CGSize(width: max(widths.max() ?? 0, 1), height: max(lineHeight * CGFloat(max(lines.count, 1)), lineHeight))
+    }
+
+    private static func roundedRectPath(width: CGFloat, height: CGFloat) -> String {
+        let radius = min(cornerRadius, min(width, height) / 2)
+        let curve = radius * 0.5522848
+        let left = -width / 2
+        let right = width / 2
+        let top = -height / 2
+        let bottom = height / 2
+        func point(_ x: CGFloat, _ y: CGFloat) -> String {
+            "\(formatNumber(x)) \(formatNumber(y))"
+        }
+
+        return [
+            "m \(point(left + radius, top))",
+            "l \(point(right - radius, top))",
+            "b \(point(right - radius + curve, top)) \(point(right, top + radius - curve)) \(point(right, top + radius))",
+            "l \(point(right, bottom - radius))",
+            "b \(point(right, bottom - radius + curve)) \(point(right - radius + curve, bottom)) \(point(right - radius, bottom))",
+            "l \(point(left + radius, bottom))",
+            "b \(point(left + radius - curve, bottom)) \(point(left, bottom - radius + curve)) \(point(left, bottom - radius))",
+            "l \(point(left, top + radius))",
+            "b \(point(left, top + radius - curve)) \(point(left + radius - curve, top)) \(point(left + radius, top))"
+        ].joined(separator: " ")
+    }
+
+    private static func escapeText(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "{", with: "\\{")
+            .replacingOccurrences(of: "}", with: "\\}")
+            .replacingOccurrences(of: "\r\n", with: "\\N")
+            .replacingOccurrences(of: "\r", with: "\\N")
+            .replacingOccurrences(of: "\n", with: "\\N")
+    }
+
+    private static func alphaHex(for opacity: Double) -> String {
+        String(format: "%02X", Int(((1 - min(max(opacity, 0), 1)) * 255).rounded()))
+    }
+
+    private static func formatTime(_ seconds: Double) -> String {
+        let total = max(seconds, 0)
+        let hours = Int(total / 3600)
+        let minutes = Int(total / 60) % 60
+        let remainder = total - Double(hours * 3600 + minutes * 60)
+        return String(format: "%d:%02d:%05.2f", hours, minutes, remainder)
+    }
+
+    private static func formatNumber(_ value: CGFloat) -> String {
+        String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), Double(value))
     }
 }
 
@@ -2155,7 +2392,8 @@ private final class SubtitleVideoRenderManager: ObservableObject {
         ffmpegURL: URL,
         ffprobeURL: URL?,
         outputBaseName: String?,
-        subtitleFontSize: Double
+        subtitleFontSize: Double,
+        subtitleBackgroundOpacity: Double
     ) {
         guard let mediaFileURL, let subtitleFileURL else {
             userMessage = "음성/영상 파일과 자막 파일을 모두 선택해 주세요."
@@ -2211,6 +2449,19 @@ private final class SubtitleVideoRenderManager: ObservableObject {
                 return
             }
 
+            guard let renderedSubtitleURL = SubtitleVideoRoundedASSGenerator.writeSubtitleFile(
+                sourceURL: safeSubtitleURL,
+                outputDirectory: tempDirectory,
+                fontSize: subtitleFontSize,
+                backgroundOpacity: subtitleBackgroundOpacity
+            ) else {
+                self.finishFailure(
+                    message: "지원되는 자막 cue를 읽지 못했습니다.",
+                    tempDirectory: tempDirectory
+                )
+                return
+            }
+
             let usesSourceVideo = SubtitleRenderPlanner.shouldUseSourceVideo(
                 for: mediaFileURL,
                 detectedHasVideoStream: self.detectHasVideoStream(
@@ -2224,9 +2475,8 @@ private final class SubtitleVideoRenderManager: ObservableObject {
                 executableURL: ffmpegURL,
                 arguments: SubtitleRenderPlanner.renderArguments(
                     mediaURL: mediaFileURL,
-                    subtitleURL: safeSubtitleURL,
+                    subtitleURL: renderedSubtitleURL,
                     outputURL: outputURL,
-                    subtitleFontSize: subtitleFontSize,
                     usesSourceVideo: usesSourceVideo
                 ),
                 expectedDuration: durationSeconds
@@ -2573,8 +2823,17 @@ struct MainView: View {
     @State private var mergeOutputName: String = ""
     @State private var subtitleVideoOutputName: String = ""
     @State private var subtitlePreviewFontSize: Double = 16
-    @State private var subtitlePreviewPlayer: AVQueuePlayer?
-    @State private var subtitlePreviewLooper: AVPlayerLooper?
+    @State private var subtitlePreviewBackgroundOpacity: Double = 0.45
+    @State private var subtitlePreviewPlayer: AVPlayer?
+    @State private var subtitlePreviewTimeObserver: Any?
+    @State private var subtitlePreviewCues: [SubtitlePreviewCue] = []
+    @State private var subtitlePreviewCurrentTime: Double = 0
+    @State private var subtitlePreviewDuration: Double = 0
+    @State private var subtitlePreviewIsPlaying = false
+    @State private var subtitlePreviewIsScrubbing = false
+    @State private var isSubtitlePreviewHovered = false
+    @State private var subtitlePreviewWasPlayingBeforeScrub = false
+    @State private var subtitlePreviewIsMuted = true
     @State private var subtitlePreviewAspectRatio: CGFloat = 16.0 / 9.0
 
     private let defaultSubtitlePreviewMetrics = SubtitlePreviewMetrics(playResY: 288, marginV: 10)
@@ -2609,7 +2868,7 @@ struct MainView: View {
         var invalidCount = 0
 
         for line in lines {
-            let detectedURLs = detectHTTPURLs(in: line)
+            let detectedURLs = detectSupportedInputURLs(in: line)
             guard !detectedURLs.isEmpty else {
                 invalidCount += 1
                 continue
@@ -2678,6 +2937,35 @@ struct MainView: View {
             && toolManager.status.ffmpeg.isInstalled
     }
 
+    private var activeTabFileDropTargeted: Binding<Bool> {
+        Binding(
+            get: {
+                switch selectedTab {
+                case .merge:
+                    return isMergeDropTargeted
+                case .convert:
+                    return isConversionDropTargeted
+                case .subtitleVideo:
+                    return isSubtitleDropTargeted
+                case .download:
+                    return false
+                }
+            },
+            set: { isTargeted in
+                switch selectedTab {
+                case .merge:
+                    isMergeDropTargeted = isTargeted
+                case .convert:
+                    isConversionDropTargeted = isTargeted
+                case .subtitleVideo:
+                    isSubtitleDropTargeted = isTargeted
+                case .download:
+                    break
+                }
+            }
+        )
+    }
+
     private var conversionMediaKind: ConversionMediaKind? {
         guard let inputFileURL = fileConversionManager.inputFileURL else { return nil }
         if Self.supportedAudioConversionInputExtensions.contains(inputFileURL.pathExtension.lowercased()) {
@@ -2726,6 +3014,43 @@ struct MainView: View {
         return loadSubtitlePreviewText(from: subtitleURL) ?? "자막 내용을 읽지 못했습니다."
     }
 
+    private var subtitlePreviewDisplayText: String {
+        guard subtitleVideoManager.outputFileURL == nil else {
+            return ""
+        }
+
+        guard subtitlePreviewPlayer != nil else {
+            return subtitlePreviewText
+        }
+
+        guard !subtitlePreviewCues.isEmpty else {
+            return subtitlePreviewText
+        }
+
+        return subtitlePreviewCues.first {
+            subtitlePreviewCurrentTime >= $0.start && subtitlePreviewCurrentTime < $0.end
+        }?.text ?? ""
+    }
+
+    private var subtitlePreviewShowsVideo: Bool {
+        if subtitleVideoManager.outputFileURL != nil {
+            return true
+        }
+
+        return usesSourceVideoForSubtitlePreview
+    }
+
+    private var subtitlePreviewCanSeek: Bool {
+        subtitlePreviewPlayer != nil && subtitlePreviewDuration > 0
+    }
+
+    private var subtitlePreviewTimeBinding: Binding<Double> {
+        Binding(
+            get: { subtitlePreviewCurrentTime },
+            set: { seekSubtitlePreview(to: $0) }
+        )
+    }
+
     private var subtitleVideoStatusTextForDisplay: String? {
         let statusText = subtitleVideoManager.statusText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statusText.isEmpty else {
@@ -2758,7 +3083,7 @@ struct MainView: View {
     }
 
     private var subtitlePreviewReservedHeight: CGFloat {
-        var reservedHeight: CGFloat = 250
+        var reservedHeight: CGFloat = 320
 
         if !toolManager.status.ffmpeg.isInstalled {
             reservedHeight += 28
@@ -2805,6 +3130,82 @@ struct MainView: View {
     private func subtitlePreviewOutlineSize(previewHeight: CGFloat, metrics: SubtitlePreviewMetrics) -> CGFloat {
         let playResY = max(metrics.playResY, 1)
         return max(0.5, min(2, previewHeight / playResY))
+    }
+
+    private func subtitleStyleControl(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        valueText: String,
+        help: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .instantHelp(help)
+
+                Spacer(minLength: 4)
+
+                Text(valueText)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 34, alignment: .trailing)
+            }
+
+            Slider(value: value, in: range, step: range.upperBound <= 1 ? 0.01 : 1)
+                .disabled(subtitleVideoManager.isRendering)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .toolkitDropSurface(isActive: false)
+    }
+
+    private func subtitlePreviewControls() -> some View {
+        HStack(spacing: 8) {
+            Button(action: toggleSubtitlePreviewPlayback) {
+                Image(systemName: subtitlePreviewIsPlaying ? "pause.fill" : "play.fill")
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.bordered)
+            .disabled(subtitlePreviewPlayer == nil)
+            .accessibilityLabel(subtitlePreviewIsPlaying ? "미리보기 일시정지" : "미리보기 재생")
+
+            Slider(
+                value: subtitlePreviewTimeBinding,
+                in: 0...max(subtitlePreviewDuration, 0.01),
+                onEditingChanged: setSubtitlePreviewScrubbing
+            )
+            .disabled(!subtitlePreviewCanSeek)
+            .accessibilityLabel("미리보기 재생 위치")
+            .accessibilityValue("\(formattedSubtitlePreviewTime(subtitlePreviewCurrentTime)) / \(formattedSubtitlePreviewTime(subtitlePreviewDuration))")
+
+            Text("\(formattedSubtitlePreviewTime(subtitlePreviewCurrentTime)) / \(formattedSubtitlePreviewTime(subtitlePreviewDuration))")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(minWidth: 92, alignment: .trailing)
+
+            Button(action: toggleSubtitlePreviewMute) {
+                Image(systemName: subtitlePreviewIsMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.bordered)
+            .disabled(subtitlePreviewPlayer == nil)
+            .accessibilityLabel(subtitlePreviewIsMuted ? "미리보기 음소거 해제" : "미리보기 음소거")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.black.opacity(0.72))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.16), lineWidth: 1)
+        )
     }
 
     private func subtitlePreviewMetrics(for subtitleURL: URL?) -> SubtitlePreviewMetrics {
@@ -2890,49 +3291,145 @@ struct MainView: View {
     }
 
     private func refreshSubtitlePreviewMedia() {
-        guard let mediaFileURL = subtitleVideoManager.mediaFileURL,
-              usesSourceVideoForSubtitlePreview
-        else {
+        subtitlePreviewCues = loadSubtitlePreviewCues(from: subtitleVideoManager.subtitleFileURL)
+
+        let previewURL = subtitleVideoManager.outputFileURL ?? subtitleVideoManager.mediaFileURL
+        guard let previewURL else {
             clearSubtitlePreviewPlayer()
             subtitlePreviewAspectRatio = Self.defaultSubtitlePreviewAspectRatio
             return
         }
 
+        let isRenderedOutput = subtitleVideoManager.outputFileURL != nil
+        let showsVideo = isRenderedOutput || usesSourceVideoForSubtitlePreview
         subtitlePreviewAspectRatio = Self.defaultSubtitlePreviewAspectRatio
-        updateSubtitlePreviewAspectRatio(for: mediaFileURL)
-
-        let item = AVPlayerItem(url: mediaFileURL)
-        let player = AVQueuePlayer()
-        let looper = AVPlayerLooper(player: player, templateItem: item)
-
-        subtitlePreviewPlayer?.pause()
-        subtitlePreviewLooper = looper
-        subtitlePreviewPlayer = player
-        player.isMuted = true
-        player.actionAtItemEnd = .none
-
-        if selectedTab == .subtitleVideo {
-            player.play()
+        if showsVideo {
+            updateSubtitlePreviewAspectRatio(for: previewURL)
         }
+
+        let item = AVPlayerItem(url: previewURL)
+        let player = AVPlayer(playerItem: item)
+
+        clearSubtitlePreviewPlayer()
+        subtitlePreviewPlayer = player
+        player.isMuted = subtitlePreviewIsMuted
+        player.actionAtItemEnd = .pause
+        subtitlePreviewCurrentTime = 0
+        subtitlePreviewDuration = 0
+        subtitlePreviewIsPlaying = false
+        subtitlePreviewTimeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            queue: .main
+        ) { time in
+            guard subtitlePreviewPlayer === player else { return }
+
+            let seconds = CMTimeGetSeconds(time)
+            guard seconds.isFinite else { return }
+            subtitlePreviewCurrentTime = max(seconds, 0)
+            subtitlePreviewIsPlaying = player.timeControlStatus == .playing
+        }
+
+        loadSubtitlePreviewDuration(for: player, item: item)
     }
 
     private func clearSubtitlePreviewPlayer() {
-        subtitlePreviewPlayer?.pause()
+        if let player = subtitlePreviewPlayer {
+            if let timeObserver = subtitlePreviewTimeObserver {
+                player.removeTimeObserver(timeObserver)
+            }
+            player.pause()
+        }
+
         subtitlePreviewPlayer = nil
-        subtitlePreviewLooper = nil
+        subtitlePreviewTimeObserver = nil
+        subtitlePreviewCurrentTime = 0
+        subtitlePreviewDuration = 0
+        subtitlePreviewIsPlaying = false
+    }
+
+    private func loadSubtitlePreviewDuration(for player: AVPlayer, item: AVPlayerItem) {
+        Task {
+            let duration = (try? await item.asset.load(.duration)) ?? .zero
+            let seconds = duration.isNumeric ? CMTimeGetSeconds(duration) : 0
+
+            await MainActor.run {
+                guard self.subtitlePreviewPlayer === player else { return }
+                self.subtitlePreviewDuration = seconds.isFinite ? max(seconds, 0) : 0
+            }
+        }
     }
 
     private func syncSubtitlePreviewPlaybackForSelectedTab() {
-        guard usesSourceVideoForSubtitlePreview else {
-            clearSubtitlePreviewPlayer()
+        if selectedTab != .subtitleVideo {
+            subtitlePreviewPlayer?.pause()
+            subtitlePreviewIsPlaying = false
+        }
+    }
+
+    private func toggleSubtitlePreviewPlayback() {
+        guard let player = subtitlePreviewPlayer else { return }
+
+        if player.timeControlStatus == .playing {
+            player.pause()
+            subtitlePreviewIsPlaying = false
             return
         }
 
-        if selectedTab == .subtitleVideo {
-            subtitlePreviewPlayer?.play()
-        } else {
-            subtitlePreviewPlayer?.pause()
+        if subtitlePreviewDuration > 0,
+           subtitlePreviewCurrentTime >= subtitlePreviewDuration - 0.05 {
+            player.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero)
+            subtitlePreviewCurrentTime = 0
         }
+
+        player.play()
+        subtitlePreviewIsPlaying = true
+    }
+
+    private func seekSubtitlePreview(to seconds: Double) {
+        guard let player = subtitlePreviewPlayer, subtitlePreviewDuration > 0 else { return }
+
+        let clampedSeconds = min(max(seconds, 0), subtitlePreviewDuration)
+        subtitlePreviewCurrentTime = clampedSeconds
+        player.seek(
+            to: CMTime(seconds: clampedSeconds, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        )
+    }
+
+    private func setSubtitlePreviewScrubbing(_ isScrubbing: Bool) {
+        guard let player = subtitlePreviewPlayer else { return }
+
+        subtitlePreviewIsScrubbing = isScrubbing
+        if isScrubbing {
+            subtitlePreviewWasPlayingBeforeScrub = player.timeControlStatus == .playing
+            player.pause()
+            subtitlePreviewIsPlaying = false
+        } else {
+            seekSubtitlePreview(to: subtitlePreviewCurrentTime)
+            if subtitlePreviewWasPlayingBeforeScrub {
+                player.play()
+                subtitlePreviewIsPlaying = true
+            }
+        }
+    }
+
+    private func toggleSubtitlePreviewMute() {
+        subtitlePreviewIsMuted.toggle()
+        subtitlePreviewPlayer?.isMuted = subtitlePreviewIsMuted
+    }
+
+    private func formattedSubtitlePreviewTime(_ seconds: Double) -> String {
+        let totalSeconds = max(Int(seconds.rounded(.down)), 0)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let remainingSeconds = totalSeconds % 60
+
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
 
     private func updateSubtitlePreviewAspectRatio(for mediaFileURL: URL) {
@@ -2940,7 +3437,8 @@ struct MainView: View {
             let aspectRatio = await readSubtitlePreviewAspectRatio(from: mediaFileURL)
 
             await MainActor.run {
-                guard subtitleVideoManager.mediaFileURL == mediaFileURL else {
+                let currentPreviewURL = subtitleVideoManager.outputFileURL ?? subtitleVideoManager.mediaFileURL
+                guard currentPreviewURL == mediaFileURL else {
                     return
                 }
 
@@ -3010,6 +3508,12 @@ struct MainView: View {
         .groupBoxStyle(.toolkitPanel)
         .background(ToolkitWindowBackground())
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onDrop(
+            of: [UTType.fileURL.identifier],
+            isTargeted: activeTabFileDropTargeted
+        ) { providers in
+            handleActiveTabFileDrop(providers: providers)
+        }
         .onAppear {
             configureDefaultOutputDirectory()
             refreshSubtitlePreviewMedia()
@@ -3023,6 +3527,12 @@ struct MainView: View {
         }
         .onChange(of: subtitleVideoManager.mediaFileURL?.path) { _ in
             syncSubtitleVideoOutputNameIfNeeded()
+            refreshSubtitlePreviewMedia()
+        }
+        .onChange(of: subtitleVideoManager.subtitleFileURL?.path) { _ in
+            refreshSubtitlePreviewMedia()
+        }
+        .onChange(of: subtitleVideoManager.outputFileURL?.path) { _ in
             refreshSubtitlePreviewMedia()
         }
         .onChange(of: selectedTab) { _ in
@@ -3200,7 +3710,7 @@ struct MainView: View {
 
     @ViewBuilder
     private var downloadTabContent: some View {
-        let urlInputHelp = "여러 URL을 붙여넣으면 '- URL' 목록으로 자동 정리됩니다. IINA 같은 플레이어에서 주소로 열 수 있는 스트리밍 URL도 지원합니다."
+        let urlInputHelp = "여러 URL을 붙여넣으면 '- URL' 목록으로 자동 정리됩니다. HTTP(S), HLS, RTSP, RTMP, SRT, UDP 스트림 주소를 녹화할 수 있습니다."
         let downloadPresetHelp = "원본 영상은 가능한 최고 원본 화질을 받고, 음성은 영상에서 M4A 음성만 바로 추출/변환합니다."
 
         GroupBox {
@@ -3813,26 +4323,25 @@ struct MainView: View {
                 }
 
                 HStack(alignment: .top, spacing: 10) {
-                    HStack(spacing: 10) {
-                        Text("자막 크기")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .instantHelp("ffmpeg 자막 스타일의 FontSize 값입니다. 미리보기는 실제 출력 기준에 맞춰 축소 표시됩니다.")
+                    subtitleStyleControl(
+                        title: "자막 크기",
+                        value: $subtitlePreviewFontSize,
+                        range: 10...36,
+                        valueText: "\(Int(subtitlePreviewFontSize))",
+                        help: "ffmpeg 자막 스타일의 FontSize 값입니다. 미리보기는 실제 출력 기준에 맞춰 축소 표시됩니다."
+                    )
 
-                        Slider(value: $subtitlePreviewFontSize, in: 10...36, step: 1)
-                            .disabled(subtitleVideoManager.isRendering)
+                    subtitleStyleControl(
+                        title: "배경 불투명도",
+                        value: $subtitlePreviewBackgroundOpacity,
+                        range: 0...1,
+                        valueText: "\(Int((subtitlePreviewBackgroundOpacity * 100).rounded()))%",
+                        help: "자막 텍스트 뒤에 표시되는 검은색 배경의 불투명도입니다. 0%는 투명, 100%는 불투명입니다."
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text("\(Int(subtitlePreviewFontSize))")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                            .frame(width: 28, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, minHeight: 46, maxHeight: 46, alignment: .center)
-                    .toolkitDropSurface(isActive: false)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
+                HStack(alignment: .top, spacing: 10) {
                     HStack(spacing: 8) {
                         Text("파일 이름")
                             .font(.caption.weight(.semibold))
@@ -3898,34 +4407,48 @@ struct MainView: View {
                             previewHeight: previewSize.height,
                             fontSize: renderedFontSize,
                             metrics: previewMetrics
-                        )
+                        ) + (isSubtitlePreviewHovered || subtitlePreviewIsScrubbing ? 56 : 0)
                         let outlineSize = subtitlePreviewOutlineSize(
                             previewHeight: previewSize.height,
                             metrics: previewMetrics
                         )
 
                         ZStack(alignment: .bottom) {
-                            if usesSourceVideoForSubtitlePreview, subtitlePreviewPlayer != nil {
+                            if subtitlePreviewShowsVideo, subtitlePreviewPlayer != nil {
                                 SubtitlePreviewVideoLayer(player: subtitlePreviewPlayer)
                                     .background(Color.black)
                             } else {
                                 Color.black
                             }
 
-                            Text(subtitlePreviewText)
-                                .font(.custom("Arial", size: renderedFontSize))
-                                .foregroundStyle(.white)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(3)
-                                .padding(.horizontal, min(24, previewSize.width * 0.08))
-                                .padding(.bottom, bottomPadding)
-                                .shadow(color: .black.opacity(0.95), radius: 0, x: outlineSize, y: 0)
-                                .shadow(color: .black.opacity(0.95), radius: 0, x: -outlineSize, y: 0)
-                                .shadow(color: .black.opacity(0.95), radius: 0, x: 0, y: outlineSize)
-                                .shadow(color: .black.opacity(0.95), radius: 0, x: 0, y: -outlineSize)
+                            if !subtitlePreviewDisplayText.isEmpty {
+                                Text(subtitlePreviewDisplayText)
+                                    .font(.custom("Arial", size: renderedFontSize))
+                                    .foregroundStyle(.white)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(3)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .fill(Color.black.opacity(subtitlePreviewBackgroundOpacity))
+                                    )
+                                    .padding(.bottom, bottomPadding)
+                                    .shadow(color: .black.opacity(0.95), radius: 0, x: outlineSize, y: 0)
+                                    .shadow(color: .black.opacity(0.95), radius: 0, x: -outlineSize, y: 0)
+                                    .shadow(color: .black.opacity(0.95), radius: 0, x: 0, y: outlineSize)
+                                    .shadow(color: .black.opacity(0.95), radius: 0, x: 0, y: -outlineSize)
+                            }
                         }
                         .frame(width: previewSize.width, height: previewSize.height)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(alignment: .bottom) {
+                            subtitlePreviewControls()
+                                .padding(8)
+                                .opacity(isSubtitlePreviewHovered || subtitlePreviewIsScrubbing ? 1 : 0.001)
+                                .allowsHitTesting(isSubtitlePreviewHovered || subtitlePreviewIsScrubbing)
+                                .accessibilityHidden(false)
+                        }
                         .overlay(alignment: .topTrailing) {
                             if subtitleVideoManager.isRendering {
                                 Text("\(Int((subtitleVideoManager.progress * 100).rounded()))%")
@@ -3948,6 +4471,8 @@ struct MainView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: previewHeight)
+
+                    .onHover { isSubtitlePreviewHovered = $0 }
 
                     VStack(alignment: .leading, spacing: 6) {
                         if let statusText = subtitleVideoStatusTextForDisplay {
@@ -3986,34 +4511,28 @@ struct MainView: View {
             .frame(maxWidth: 900, alignment: .center)
             .frame(maxWidth: .infinity, alignment: .center)
             .controlSize(.small)
-        } label: {
-            Label("자막 하드코딩 영상", systemImage: "captions.bubble")
-                .instantHelp(subtitleModeHelp)
         }
     }
 
-    private func detectHTTPURLs(in value: String) -> [String] {
+    private func detectSupportedInputURLs(in value: String) -> [String] {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return []
-        }
+        let pattern = #"(?i)(?:https?|rtsp|rtmp|rtmps|srt|udp)://[^\s<>\"']+"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
 
         let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
-        var urls: [String] = []
-
-        detector.enumerateMatches(in: trimmed, options: [], range: range) { match, _, _ in
-            guard let url = match?.url,
-                  let scheme = url.scheme?.lowercased(),
-                  ["http", "https"].contains(scheme),
-                  url.host != nil else {
-                return
+        return expression.matches(in: trimmed, range: range).compactMap { match in
+            guard let swiftRange = Range(match.range, in: trimmed) else { return nil }
+            let candidate = String(trimmed[swiftRange])
+            guard let components = URLComponents(string: candidate),
+                  let scheme = components.scheme?.lowercased(),
+                  ["http", "https", "rtsp", "rtmp", "rtmps", "srt", "udp"].contains(scheme),
+                  components.host != nil else {
+                return nil
             }
-            urls.append(url.absoluteString)
+            return candidate
         }
-
-        return urls
     }
 
     private func normalizeURLTextAsListIfNeeded() {
@@ -4030,7 +4549,7 @@ struct MainView: View {
         var detectedURLCount = 0
 
         for line in lines {
-            let detectedURLs = detectHTTPURLs(in: line)
+            let detectedURLs = detectSupportedInputURLs(in: line)
             if detectedURLs.isEmpty {
                 formattedLines.append(line.hasPrefix("-") ? line : "- \(line)")
             } else {
@@ -4169,6 +4688,19 @@ struct MainView: View {
         }
 
         return true
+    }
+
+    private func handleActiveTabFileDrop(providers: [NSItemProvider]) -> Bool {
+        switch selectedTab {
+        case .merge:
+            return handleVideoDrop(providers: providers)
+        case .convert:
+            return handleConversionDrop(providers: providers)
+        case .subtitleVideo:
+            return handleSubtitleMediaDrop(providers: providers)
+        case .download:
+            return false
+        }
     }
 
     private func handleConversionDrop(providers: [NSItemProvider]) -> Bool {
@@ -4479,7 +5011,8 @@ struct MainView: View {
             ffmpegURL: URL(fileURLWithPath: ffmpegPath),
             ffprobeURL: toolManager.status.ffprobe?.path.map { URL(fileURLWithPath: $0) },
             outputBaseName: subtitleVideoOutputName,
-            subtitleFontSize: subtitlePreviewFontSize
+            subtitleFontSize: subtitlePreviewFontSize,
+            subtitleBackgroundOpacity: subtitlePreviewBackgroundOpacity
         )
     }
 
@@ -4531,17 +5064,127 @@ struct MainView: View {
         subtitleVideoOutputName = "\(mediaFileURL.deletingPathExtension().lastPathComponent)-subtitle-video"
     }
 
-    private func loadSubtitlePreviewText(from url: URL) -> String? {
+    private func loadSubtitlePreviewCues(from url: URL?) -> [SubtitlePreviewCue] {
+        guard let url,
+              let rawText = loadSubtitleRawText(from: url)
+        else {
+            return []
+        }
+
+        switch url.pathExtension.lowercased() {
+        case "srt", "vtt":
+            return parseLineSubtitleCues(rawText)
+        case "ass", "ssa":
+            return parseASSSubtitleCues(rawText)
+        default:
+            return []
+        }
+    }
+
+    private func parseLineSubtitleCues(_ rawText: String) -> [SubtitlePreviewCue] {
+        let normalizedText = rawText
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let blocks = normalizedText.components(separatedBy: "\n\n")
+
+        return blocks.compactMap { block in
+            let lines = block.components(separatedBy: "\n")
+            guard let timingIndex = lines.firstIndex(where: { $0.contains("-->") }) else {
+                return nil
+            }
+
+            let timingParts = lines[timingIndex].components(separatedBy: "-->")
+            guard timingParts.count >= 2,
+                  let start = parseSubtitleTimestamp(timingParts[0]),
+                  let end = parseSubtitleTimestamp(timingParts[1]) else {
+                return nil
+            }
+
+            let text = lines.dropFirst(timingIndex + 1)
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanedText = cleanSubtitlePreviewCueText(text)
+            guard start < end, !cleanedText.isEmpty else { return nil }
+
+            return SubtitlePreviewCue(start: start, end: end, text: cleanedText)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private func parseASSSubtitleCues(_ rawText: String) -> [SubtitlePreviewCue] {
+        rawText.components(separatedBy: .newlines).compactMap { line in
+            guard line.hasPrefix("Dialogue:") else { return nil }
+
+            let components = line.components(separatedBy: ",")
+            guard components.count >= 10,
+                  let start = parseSubtitleTimestamp(components[1]),
+                  let end = parseSubtitleTimestamp(components[2]) else {
+                return nil
+            }
+
+            let text = components.dropFirst(9)
+                .joined(separator: ",")
+                .replacingOccurrences(of: "\\N", with: "\n")
+                .replacingOccurrences(of: "\\n", with: "\n")
+            let cleanedText = cleanSubtitlePreviewCueText(text)
+            guard start < end, !cleanedText.isEmpty else { return nil }
+
+            return SubtitlePreviewCue(start: start, end: end, text: cleanedText)
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    private func parseSubtitleTimestamp(_ rawValue: String) -> Double? {
+        let token = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: " ")
+            .first
+            .map(String.init) ?? ""
+        let normalized = token.replacingOccurrences(of: ",", with: ".")
+        let components = normalized.split(separator: ":")
+
+        guard components.count == 2 || components.count == 3,
+              let lastComponent = components.last,
+              let seconds = Double(String(lastComponent)) else {
+            return nil
+        }
+
+        if components.count == 2,
+           let minutes = Double(components[0]) {
+            return (minutes * 60) + seconds
+        }
+
+        guard let hours = Double(components[0]),
+              let minutes = Double(components[1]) else {
+            return nil
+        }
+
+        return (hours * 3600) + (minutes * 60) + seconds
+    }
+
+    private func cleanSubtitlePreviewCueText(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\{.*?\\}", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func loadSubtitleRawText(from url: URL) -> String? {
         guard let data = try? Data(contentsOf: url) else { return nil }
 
-        let rawText =
-            String(data: data, encoding: .utf8) ??
+        return String(data: data, encoding: .utf8) ??
             String(data: data, encoding: .unicode) ??
             String(data: data, encoding: .utf16) ??
             String(data: data, encoding: .utf16LittleEndian) ??
             String(data: data, encoding: .utf16BigEndian)
+    }
 
-        guard let rawText else { return nil }
+    private func loadSubtitlePreviewText(from url: URL) -> String? {
+        guard let rawText = loadSubtitleRawText(from: url) else { return nil }
 
         let ext = url.pathExtension.lowercased()
         switch ext {
@@ -4792,6 +5435,10 @@ struct MainView: View {
             return true
         }
 
+        if isKnownNetworkStreamURL(url) {
+            return true
+        }
+
         let inputArguments = directStreamProbeInputArguments(for: url)
 
         if let ffprobeURL,
@@ -4833,7 +5480,16 @@ struct MainView: View {
         return ffmpegProbe.terminationStatus == 0
     }
 
+    private func isKnownNetworkStreamURL(_ url: String) -> Bool {
+        guard let scheme = URLComponents(string: url)?.scheme?.lowercased() else {
+            return false
+        }
+        return ["rtsp", "rtmp", "rtmps", "srt", "udp"].contains(scheme)
+    }
+
     private func directStreamProbeInputArguments(for url: String) -> [String] {
+        guard usesHTTPStreamOptions(for: url) else { return [] }
+
         let requestOptions = directStreamRequestOptions(for: url)
         var arguments: [String] = []
 
@@ -4846,6 +5502,13 @@ struct MainView: View {
         }
 
         return arguments
+    }
+
+    private func usesHTTPStreamOptions(for url: String) -> Bool {
+        guard let scheme = URLComponents(string: url)?.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
     }
 
     private func directStreamRequestOptions(for url: String) -> (userAgent: String?, headers: [String: String]) {
