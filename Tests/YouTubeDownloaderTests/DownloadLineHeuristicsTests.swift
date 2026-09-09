@@ -1,5 +1,5 @@
 import XCTest
-@testable import YouTubeDownloader
+@testable import VideoSimpleToolkit
 
 final class DownloadLineHeuristicsTests: XCTestCase {
     func testParseProgressExtractsPercentSizeSpeedEta() {
@@ -73,4 +73,58 @@ final class DownloadLineHeuristicsTests: XCTestCase {
             "/Users/test/Movies/merged.mp4"
         )
     }
+
+    func testSubtitleRenderPlannerKeepsVideoFilesOnSourceVideoWhenProbeMissesStream() {
+        let mediaURL = URL(fileURLWithPath: "/tmp/source-video.mp4")
+        let subtitleURL = URL(fileURLWithPath: "/tmp/subtitle.srt")
+        let outputURL = URL(fileURLWithPath: "/tmp/output.mp4")
+        let usesSourceVideo = SubtitleRenderPlanner.shouldUseSourceVideo(
+            for: mediaURL,
+            detectedHasVideoStream: false
+        )
+        let arguments = SubtitleRenderPlanner.renderArguments(
+            mediaURL: mediaURL,
+            subtitleURL: subtitleURL,
+            outputURL: outputURL,
+            usesSourceVideo: usesSourceVideo
+        )
+
+        XCTAssertTrue(usesSourceVideo)
+        XCTAssertFalse(arguments.contains("color=c=black:s=1280x720:r=30"))
+        XCTAssertTrue(arguments.contains("-map"))
+        XCTAssertTrue(arguments.contains("0:v:0"))
+        XCTAssertFalse(arguments.contains("1:a:0"))
+    }
+
+    func testSubtitleRenderPlannerUsesPreparedASSFilter() {
+        let arguments = SubtitleRenderPlanner.renderArguments(
+            mediaURL: URL(fileURLWithPath: "/tmp/source-video.mp4"),
+            subtitleURL: URL(fileURLWithPath: "/tmp/rounded-subtitles.ass"),
+            outputURL: URL(fileURLWithPath: "/tmp/output.mp4"),
+            usesSourceVideo: true
+        )
+
+        guard let filterIndex = arguments.firstIndex(of: "-vf"), arguments.indices.contains(filterIndex + 1) else {
+            XCTFail("subtitle video filter argument is missing")
+            return
+        }
+
+        let filter = arguments[filterIndex + 1]
+        XCTAssertEqual(filter, "subtitles='/tmp/rounded-subtitles.ass'")
+    }
+
+    func testRoundedSubtitleASSContentUsesVectorBackgroundWithNarrowPadding() {
+        let content = SubtitleVideoRoundedASSGenerator.makeSubtitleASSContent(
+            cues: [SubtitleVideoRoundedCue(start: 0, end: 2, text: "Rounded subtitle")],
+            fontSize: 16,
+            backgroundOpacity: 0.45
+        )
+
+        XCTAssertTrue(content.contains("\\p1"))
+        XCTAssertTrue(content.contains("\\an5\\pos("))
+        XCTAssertTrue(content.contains("m -"))
+        XCTAssertTrue(content.contains(" b "))
+        XCTAssertFalse(content.contains("BorderStyle=3"))
+    }
+
 }

@@ -7,6 +7,12 @@ final class DownloadManager: ObservableObject {
         case directM3U8Recording
     }
 
+    private enum DirectStreamTransport {
+        case standard
+        case rtspTCP
+        case rtspUDP
+    }
+
     private struct StatusEvent {
         let phase: DownloadPhase
         let progress: Double?
@@ -66,6 +72,10 @@ final class DownloadManager: ObservableObject {
     private var currentOutputDirectory: URL?
     private var currentExecutionMode: ExecutionMode = .ytDlp
     private var ffmpegRecordingProgressState = FFmpegRecordingProgressState()
+    private var directStreamTransport: DirectStreamTransport = .standard
+    private var directStreamURL: String?
+    private var directStreamOutputURL: URL?
+    private var directStreamOptions: DownloadOptions?
 
     private let workerQueue = DispatchQueue(label: "youtube.downloader.worker", qos: .userInitiated)
     private let parsingQueue = DispatchQueue(label: "youtube.downloader.parsing", qos: .userInitiated)
@@ -146,6 +156,7 @@ final class DownloadManager: ObservableObject {
         options: DownloadOptions
     ) {
         currentExecutionMode = .directM3U8Recording
+        directStreamTransport = isRTSPURL(url) ? .rtspTCP : .standard
 
         let outputURL = buildDirectM3U8OutputURL(
             url: url,
@@ -154,13 +165,25 @@ final class DownloadManager: ObservableObject {
         )
 
         outputFilePath = outputURL
+        directStreamURL = url
+        directStreamOutputURL = outputURL
+        directStreamOptions = options
         statusText = "실시간 스트림 연결 중"
         progress = 0.02
+        launchDirectStreamRecording(toolPaths: toolPaths, outputDir: outputDir)
+    }
+
+    private func launchDirectStreamRecording(toolPaths: ToolPaths, outputDir: URL) {
+        guard let directStreamURL,
+              let directStreamOutputURL,
+              let directStreamOptions else {
+            return
+        }
 
         let arguments = buildDirectM3U8Arguments(
-            url: url,
-            outputURL: outputURL,
-            options: options
+            url: directStreamURL,
+            outputURL: directStreamOutputURL,
+            options: directStreamOptions
         )
 
         workerQueue.async {
@@ -266,6 +289,10 @@ final class DownloadManager: ObservableObject {
         didReuseExistingDownload = false
         currentExecutionMode = .ytDlp
         ffmpegRecordingProgressState.reset()
+        directStreamTransport = .standard
+        directStreamURL = nil
+        directStreamOutputURL = nil
+        directStreamOptions = nil
 
         parsingQueue.sync {
             pendingAnalyses.removeAll(keepingCapacity: true)
@@ -382,7 +409,16 @@ final class DownloadManager: ObservableObject {
 
         arguments += directStreamInputArguments(for: url)
 
-        if options.hlsAutoReconnectEnabled {
+        switch directStreamTransport {
+        case .standard:
+            break
+        case .rtspTCP:
+            arguments += ["-rtsp_transport", "tcp"]
+        case .rtspUDP:
+            arguments += ["-rtsp_transport", "udp"]
+        }
+
+        if options.hlsAutoReconnectEnabled && usesHTTPReconnectOptions(for: url) {
             let timeoutSeconds = min(max(options.hlsReconnectFailTimeoutSeconds, 15), 1800)
             let timeoutMicroseconds = timeoutSeconds * 1_000_000
             arguments += [
@@ -408,16 +444,20 @@ final class DownloadManager: ObservableObject {
                 "-c:a", "aac",
                 "-b:a", "192k",
                 "-ar", "48000",
-                "-ac", "2",
-                "-movflags", "+faststart"
+                "-ac", "2"
             ]
+            if outputURL.pathExtension.lowercased() == "mp4" {
+                arguments += ["-movflags", "+faststart"]
+            }
         case .bestQualityMP4:
             arguments += [
                 "-map", "0:v:0?",
                 "-map", "0:a:0?",
-                "-c", "copy",
-                "-movflags", "+faststart"
+                "-c", "copy"
             ]
+            if outputURL.pathExtension.lowercased() == "mp4" {
+                arguments += ["-movflags", "+faststart"]
+            }
         case .audioOnlyM4A:
             arguments += [
                 "-map", "0:a:0?",
@@ -435,6 +475,8 @@ final class DownloadManager: ObservableObject {
     }
 
     private func directStreamInputArguments(for url: String) -> [String] {
+        guard usesHTTPReconnectOptions(for: url) else { return [] }
+
         let requestOptions = directStreamRequestOptions(for: url)
         var arguments: [String] = []
 
@@ -447,6 +489,13 @@ final class DownloadManager: ObservableObject {
         }
 
         return arguments
+    }
+
+    private func usesHTTPReconnectOptions(for url: String) -> Bool {
+        guard let scheme = URLComponents(string: url)?.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "http" || scheme == "https"
     }
 
     private func directStreamRequestOptions(for url: String) -> (userAgent: String?, headers: [String: String]) {
@@ -516,7 +565,14 @@ final class DownloadManager: ObservableObject {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let suffix = String(UUID().uuidString.prefix(6)).lowercased()
         let baseName = "live-\(host.isEmpty ? "stream" : host)-\(formatter.string(from: Date()))-\(suffix)"
-        let fileExtension = preset == .audioOnlyM4A ? "m4a" : "mp4"
+        let fileExtension: String
+        if preset == .audioOnlyM4A {
+            fileExtension = "m4a"
+        } else if isNetworkStreamContainerSaferAsMKV(url) {
+            fileExtension = "mkv"
+        } else {
+            fileExtension = "mp4"
+        }
 
         return outputDir
             .appendingPathComponent(baseName)
@@ -552,6 +608,17 @@ final class DownloadManager: ObservableObject {
         return false
     }
 
+    private func isRTSPURL(_ url: String) -> Bool {
+        URLComponents(string: url)?.scheme?.lowercased() == "rtsp"
+    }
+
+    private func isNetworkStreamContainerSaferAsMKV(_ url: String) -> Bool {
+        guard let scheme = URLComponents(string: url)?.scheme?.lowercased() else {
+            return false
+        }
+        return ["rtsp", "rtmp", "rtmps", "srt", "udp"].contains(scheme)
+    }
+
     private func handleOutputLine(_ line: String, isStderr: Bool) {
         guard !line.isEmpty else { return }
         parsingQueue.async { [weak self] in
@@ -570,6 +637,21 @@ final class DownloadManager: ObservableObject {
 
             self.runningProcess?.cleanup()
             self.runningProcess = nil
+
+            if !self.didCancel,
+               status != 0,
+               self.currentExecutionMode == .directM3U8Recording,
+               self.directStreamTransport == .rtspTCP,
+               let toolPaths = self.currentToolPaths {
+                self.directStreamTransport = .rtspUDP
+                self.aggregatedFailureSignals = DownloadFailureSignals()
+                self.ffmpegRecordingProgressState.reset()
+                self.failureCategory = nil
+                self.transition(to: .preparing, status: "RTSP UDP로 다시 연결 중")
+                self.launchDirectStreamRecording(toolPaths: toolPaths, outputDir: outputDir)
+                return
+            }
+
             self.isDownloading = false
             self.isPaused = false
 
