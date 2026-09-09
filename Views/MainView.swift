@@ -2834,6 +2834,7 @@ struct MainView: View {
     @State private var isSubtitlePreviewHovered = false
     @State private var subtitlePreviewWasPlayingBeforeScrub = false
     @State private var subtitlePreviewIsMuted = true
+    @State private var subtitlePreviewVolume: Double = 0.7
     @State private var subtitlePreviewAspectRatio: CGFloat = 16.0 / 9.0
 
     private let defaultSubtitlePreviewMetrics = SubtitlePreviewMetrics(playResY: 288, marginV: 10)
@@ -3051,6 +3052,13 @@ struct MainView: View {
         )
     }
 
+    private var subtitlePreviewVolumeBinding: Binding<Double> {
+        Binding(
+            get: { subtitlePreviewVolume },
+            set: { setSubtitlePreviewVolume(to: $0) }
+        )
+    }
+
     private var subtitleVideoStatusTextForDisplay: String? {
         let statusText = subtitleVideoManager.statusText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !statusText.isEmpty else {
@@ -3188,12 +3196,17 @@ struct MainView: View {
                 .frame(minWidth: 92, alignment: .trailing)
 
             Button(action: toggleSubtitlePreviewMute) {
-                Image(systemName: subtitlePreviewIsMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                Image(systemName: subtitlePreviewVolumeIconName)
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.bordered)
             .disabled(subtitlePreviewPlayer == nil)
             .accessibilityLabel(subtitlePreviewIsMuted ? "미리보기 음소거 해제" : "미리보기 음소거")
+
+        Slider(value: subtitlePreviewVolumeBinding, in: 0...1)
+            .frame(width: 88)
+            .accessibilityLabel("미리보기 볼륨")
+            .accessibilityValue("\(Int((subtitlePreviewVolume * 100).rounded()))%")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -3312,6 +3325,7 @@ struct MainView: View {
 
         clearSubtitlePreviewPlayer()
         subtitlePreviewPlayer = player
+        player.volume = Float(subtitlePreviewVolume)
         player.isMuted = subtitlePreviewIsMuted
         player.actionAtItemEnd = .pause
         subtitlePreviewCurrentTime = 0
@@ -3417,6 +3431,33 @@ struct MainView: View {
     private func toggleSubtitlePreviewMute() {
         subtitlePreviewIsMuted.toggle()
         subtitlePreviewPlayer?.isMuted = subtitlePreviewIsMuted
+    }
+
+    private func setSubtitlePreviewVolume(to volume: Double) {
+        let clampedVolume = min(max(volume, 0), 1)
+        subtitlePreviewVolume = clampedVolume
+        subtitlePreviewPlayer?.volume = Float(clampedVolume)
+
+        if subtitlePreviewIsMuted {
+            subtitlePreviewIsMuted = false
+            subtitlePreviewPlayer?.isMuted = false
+        }
+    }
+
+    private var subtitlePreviewVolumeIconName: String {
+        guard !subtitlePreviewIsMuted, subtitlePreviewVolume > 0.01 else {
+            return "speaker.slash.fill"
+        }
+
+        if subtitlePreviewVolume < 0.34 {
+            return "speaker.wave.1.fill"
+        }
+
+        if subtitlePreviewVolume < 0.67 {
+            return "speaker.wave.2.fill"
+        }
+
+        return "speaker.wave.3.fill"
     }
 
     private func formattedSubtitlePreviewTime(_ seconds: Double) -> String {
