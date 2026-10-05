@@ -49,12 +49,14 @@ final class DownloadManager: ObservableObject {
 
     @Published private(set) var phase: DownloadPhase = .idle
     @Published private(set) var progress: Double = 0
+    @Published private(set) var isProgressIndeterminate = false
     @Published private(set) var statusText: String = "대기 중"
     @Published private(set) var isDownloading: Bool = false
     @Published private(set) var isPaused: Bool = false
     @Published private(set) var outputFilePath: URL?
     @Published private(set) var failureCategory: DownloadFailureCategory?
     @Published var userMessage: String?
+    @Published var requestedFilename = ""
 
     private var runningProcess: RunningProcess?
     private var didCancel = false
@@ -63,6 +65,8 @@ final class DownloadManager: ObservableObject {
     private var aggregatedFailureSignals = DownloadFailureSignals()
     private var currentRunStartedAt: Date?
     private var didReuseExistingDownload = false
+    private var initialOutputFiles: Set<URL> = []
+    private var observedOutputFiles: Set<URL> = []
     private var pendingAnalyses: [LineAnalysis] = []
     private var analysisFlushWorkItem: DispatchWorkItem?
     private var pendingStatusEvent: StatusEvent?
@@ -75,7 +79,12 @@ final class DownloadManager: ObservableObject {
     private var directStreamTransport: DirectStreamTransport = .standard
     private var directStreamURL: String?
     private var directStreamOutputURL: URL?
+    private var directStreamTemporaryOutputURL: URL?
     private var directStreamOptions: DownloadOptions?
+    private var directStreamIsHLS = false
+    private var directStreamRefererURL: String?
+    private var directStreamDuration: Double?
+    private var didAttemptHLSCompatibilityFallback = false
 
     private let workerQueue = DispatchQueue(label: "youtube.downloader.worker", qos: .userInitiated)
     private let parsingQueue = DispatchQueue(label: "youtube.downloader.parsing", qos: .userInitiated)
@@ -93,22 +102,26 @@ final class DownloadManager: ObservableObject {
         url: String,
         outputDir: URL,
         toolPaths: ToolPaths,
-        options: DownloadOptions = .default
+        options: DownloadOptions = .default,
+        suggestedFilename: String? = nil,
+        refererURL: String? = nil
     ) {
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedURL.isEmpty else {
+        guard let normalizedURL = StreamURLResolver.normalizedInputURL(from: trimmedURL) else {
             failureCategory = .invalidURL
-            userMessage = "URL을 입력해 주세요."
+            userMessage = trimmedURL.isEmpty ? "URL을 입력해 주세요." : "유효한 URL 또는 HLS 스트리밍 주소를 입력해 주세요."
             return
         }
 
         guard !isDownloading else { return }
 
         resetForNewDownload(outputDir: outputDir, toolPaths: toolPaths)
-        if options.forceDirectStreamCapture || isLikelyM3U8URL(trimmedURL) {
+        requestedFilename = suggestedFilename ?? ""
+        directStreamRefererURL = refererURL
+        if options.forceDirectStreamCapture || isLikelyM3U8URL(normalizedURL) {
             transition(to: .preparing, status: "스트리밍 녹화 준비 중")
             startDirectM3U8Recording(
-                url: trimmedURL,
+                url: normalizedURL,
                 outputDir: outputDir,
                 toolPaths: toolPaths,
                 options: options
@@ -116,7 +129,7 @@ final class DownloadManager: ObservableObject {
         } else {
             transition(to: .preparing, status: "준비 중")
             startYtDlpDownload(
-                url: trimmedURL,
+                url: normalizedURL,
                 outputDir: outputDir,
                 toolPaths: toolPaths,
                 options: options
@@ -157,6 +170,9 @@ final class DownloadManager: ObservableObject {
     ) {
         currentExecutionMode = .directM3U8Recording
         directStreamTransport = isRTSPURL(url) ? .rtspTCP : .standard
+        directStreamIsHLS = isLikelyM3U8URL(url)
+        isProgressIndeterminate = true
+        didAttemptHLSCompatibilityFallback = false
 
         let outputURL = buildDirectM3U8OutputURL(
             url: url,
@@ -165,11 +181,15 @@ final class DownloadManager: ObservableObject {
         )
 
         outputFilePath = outputURL
+        observedOutputFiles.insert(outputURL.standardizedFileURL)
         directStreamURL = url
         directStreamOutputURL = outputURL
+        directStreamTemporaryOutputURL = directStreamIsHLS
+            ? outputURL.appendingPathExtension("part")
+            : nil
         directStreamOptions = options
-        statusText = "실시간 스트림 연결 중"
-        progress = 0.02
+        statusText = directStreamIsHLS ? "HLS 세그먼트 다운로드 준비 중" : "실시간 스트림 연결 중"
+        progress = 0
         launchDirectStreamRecording(toolPaths: toolPaths, outputDir: outputDir)
     }
 
@@ -180,13 +200,31 @@ final class DownloadManager: ObservableObject {
             return
         }
 
+        let processOutputURL = directStreamTemporaryOutputURL ?? directStreamOutputURL
         let arguments = buildDirectM3U8Arguments(
             url: directStreamURL,
-            outputURL: directStreamOutputURL,
-            options: directStreamOptions
+            outputURL: processOutputURL,
+            options: directStreamOptions,
+            compatibilityFallback: didAttemptHLSCompatibilityFallback
         )
 
         workerQueue.async {
+            if self.directStreamIsHLS, let ffprobeURL = toolPaths.ffprobePath {
+                let probe = ProcessRunner.runAndCapture(
+                    executableURL: ffprobeURL,
+                    arguments: self.directStreamInputArguments(for: directStreamURL) + [
+                        "-v", "error", "-rw_timeout", "5000000",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1", directStreamURL
+                    ]
+                )
+                if probe?.terminationStatus == 0,
+                   let seconds = Double(probe?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""),
+                   seconds.isFinite, seconds > 0 {
+                    self.parsingQueue.sync { self.directStreamDuration = seconds }
+                    DispatchQueue.main.async { self.isProgressIndeterminate = false }
+                }
+            }
             self.launchStreamingProcess(
                 executableURL: toolPaths.ffmpegPath,
                 arguments: arguments,
@@ -242,12 +280,17 @@ final class DownloadManager: ObservableObject {
         DispatchQueue.main.async {
             guard self.isDownloading else { return }
             self.didCancel = true
+            if self.isPaused {
+                _ = self.runningProcess?.resume()
+            }
             self.isPaused = false
             self.pendingStatusEvent = nil
             self.statusFlushWorkItem?.cancel()
             self.statusFlushWorkItem = nil
             self.phase = .canceled
-            self.statusText = self.currentExecutionMode == .directM3U8Recording ? "녹화 종료 요청 중" : "취소 요청 중"
+            self.statusText = self.currentExecutionMode == .directM3U8Recording
+                ? (self.directStreamIsHLS ? "HLS 다운로드 종료 요청 중" : "녹화 종료 요청 중")
+                : "취소 요청 중"
             if self.currentExecutionMode == .directM3U8Recording {
                 self.runningProcess?.cancelGracefully()
             } else {
@@ -264,7 +307,9 @@ final class DownloadManager: ObservableObject {
             if self.isPaused {
                 if runningProcess.resume() {
                     self.isPaused = false
-                    self.phase = self.currentExecutionMode == .directM3U8Recording ? .recording : .downloading
+                    self.phase = self.currentExecutionMode == .directM3U8Recording && !self.directStreamIsHLS
+                        ? .recording
+                        : .downloading
                     self.userMessage = nil
                 } else {
                     self.userMessage = "다운로드 재개에 실패했습니다."
@@ -287,12 +332,24 @@ final class DownloadManager: ObservableObject {
         aggregatedFailureSignals = DownloadFailureSignals()
         currentRunStartedAt = Date()
         didReuseExistingDownload = false
+        initialOutputFiles = Set(
+            (try? FileManager.default.contentsOfDirectory(
+                at: outputDir,
+                includingPropertiesForKeys: nil
+            ))?.map(\.standardizedFileURL) ?? []
+        )
+        observedOutputFiles.removeAll()
         currentExecutionMode = .ytDlp
         ffmpegRecordingProgressState.reset()
         directStreamTransport = .standard
         directStreamURL = nil
         directStreamOutputURL = nil
+        directStreamTemporaryOutputURL = nil
         directStreamOptions = nil
+        directStreamIsHLS = false
+        directStreamRefererURL = nil
+        directStreamDuration = nil
+        didAttemptHLSCompatibilityFallback = false
 
         parsingQueue.sync {
             pendingAnalyses.removeAll(keepingCapacity: true)
@@ -305,6 +362,7 @@ final class DownloadManager: ObservableObject {
         statusFlushWorkItem = nil
 
         progress = 0
+        isProgressIndeterminate = false
         phase = .preparing
         statusText = "준비 중"
         isDownloading = true
@@ -312,6 +370,7 @@ final class DownloadManager: ObservableObject {
         outputFilePath = nil
         failureCategory = nil
         userMessage = nil
+        requestedFilename = ""
         lastTemporaryOutputPath = nil
 
         currentToolPaths = toolPaths
@@ -397,7 +456,8 @@ final class DownloadManager: ObservableObject {
     private func buildDirectM3U8Arguments(
         url: String,
         outputURL: URL,
-        options: DownloadOptions
+        options: DownloadOptions,
+        compatibilityFallback: Bool
     ) -> [String] {
         var arguments: [String] = [
             "-y",
@@ -450,12 +510,27 @@ final class DownloadManager: ObservableObject {
                 arguments += ["-movflags", "+faststart"]
             }
         case .bestQualityMP4:
-            arguments += [
-                "-map", "0:v:0?",
-                "-map", "0:a:0?",
-                "-c", "copy"
-            ]
-            if outputURL.pathExtension.lowercased() == "mp4" {
+            if compatibilityFallback && directStreamIsHLS {
+                arguments += [
+                    "-map", "0:v:0?",
+                    "-map", "0:a:0?",
+                    "-c:v", "libx264",
+                    "-preset", "veryfast",
+                    "-crf", "20",
+                    "-pix_fmt", "yuv420p",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-ar", "48000",
+                    "-ac", "2"
+                ]
+            } else {
+                arguments += [
+                    "-map", "0:v:0?",
+                    "-map", "0:a:0?",
+                    "-c", "copy"
+                ]
+            }
+            if directStreamIsHLS || outputURL.pathExtension.lowercased() == "mp4" {
                 arguments += ["-movflags", "+faststart"]
             }
         case .audioOnlyM4A:
@@ -468,6 +543,10 @@ final class DownloadManager: ObservableObject {
                 "-ac", "2",
                 "-movflags", "+faststart"
             ]
+        }
+
+        if directStreamIsHLS {
+            arguments += ["-f", options.preset == .audioOnlyM4A ? "ipod" : "mp4"]
         }
 
         arguments.append(outputURL.path)
@@ -505,6 +584,14 @@ final class DownloadManager: ObservableObject {
         if let origin = inferredAllowedOrigin(from: url) {
             headers["Origin"] = origin
             headers["Referer"] = origin.hasSuffix("/") ? origin : "\(origin)/"
+        }
+
+        if let directStreamRefererURL {
+            headers["Referer"] = directStreamRefererURL
+            if let parts = URLComponents(string: directStreamRefererURL),
+               let scheme = parts.scheme, let host = parts.host {
+                headers["Origin"] = "\(scheme)://\(host)\(parts.port.map { ":\($0)" } ?? "")"
+            }
         }
 
         return (userAgent: userAgent, headers: headers)
@@ -580,32 +667,7 @@ final class DownloadManager: ObservableObject {
     }
 
     private func isLikelyM3U8URL(_ url: String) -> Bool {
-        let lowered = url.lowercased()
-        if lowered.contains(".m3u8") {
-            return true
-        }
-
-        guard let components = URLComponents(string: url) else {
-            return false
-        }
-
-        if components.path.lowercased().contains(".m3u8") {
-            return true
-        }
-
-        guard let items = components.queryItems else {
-            return false
-        }
-
-        for item in items {
-            let name = item.name.lowercased()
-            let value = (item.value ?? "").lowercased()
-            if name.contains("m3u8") || value.contains(".m3u8") || value == "m3u8" {
-                return true
-            }
-        }
-
-        return false
+        StreamURLResolver.isHLSURL(url)
     }
 
     private func isRTSPURL(_ url: String) -> Bool {
@@ -617,6 +679,43 @@ final class DownloadManager: ObservableObject {
             return false
         }
         return ["rtsp", "rtmp", "rtmps", "srt", "udp"].contains(scheme)
+    }
+
+    private var shouldRetryHLSWithCompatibilityEncoding: Bool {
+        guard directStreamIsHLS,
+              !didAttemptHLSCompatibilityFallback,
+              directStreamOptions?.preset == .bestQualityMP4 else {
+            return false
+        }
+
+        return directStreamOutputURL?.pathExtension.lowercased() == "mp4"
+    }
+
+    private func cleanupDirectStreamTemporaryOutput() {
+        guard let temporaryURL = directStreamTemporaryOutputURL else { return }
+        try? FileManager.default.removeItem(at: temporaryURL)
+    }
+
+    private func promoteDirectStreamOutput() -> Bool {
+        guard directStreamIsHLS,
+              let temporaryURL = directStreamTemporaryOutputURL,
+              let outputURL = directStreamOutputURL else {
+            return true
+        }
+
+        guard FileManager.default.fileExists(atPath: temporaryURL.path) else {
+            return false
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: outputURL.path) {
+                try FileManager.default.removeItem(at: outputURL)
+            }
+            try FileManager.default.moveItem(at: temporaryURL, to: outputURL)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func handleOutputLine(_ line: String, isStderr: Bool) {
@@ -640,6 +739,25 @@ final class DownloadManager: ObservableObject {
 
             if !self.didCancel,
                status != 0,
+               self.shouldRetryHLSWithCompatibilityEncoding {
+                self.didAttemptHLSCompatibilityFallback = true
+                self.cleanupDirectStreamTemporaryOutput()
+                self.aggregatedFailureSignals = DownloadFailureSignals()
+                self.ffmpegRecordingProgressState.reset()
+                self.failureCategory = nil
+                self.transition(to: .preparing, status: "MP4 호환성 재인코딩으로 다시 시도 중")
+                guard let toolPaths = self.currentToolPaths else {
+                    self.failureCategory = .execution
+                    self.transition(to: .failed, status: "실패 (ffmpeg 경로 확인)")
+                    self.userMessage = "ffmpeg 경로를 확인하지 못했습니다."
+                    return
+                }
+                self.launchDirectStreamRecording(toolPaths: toolPaths, outputDir: outputDir)
+                return
+            }
+
+            if !self.didCancel,
+               status != 0,
                self.currentExecutionMode == .directM3U8Recording,
                self.directStreamTransport == .rtspTCP,
                let toolPaths = self.currentToolPaths {
@@ -656,18 +774,7 @@ final class DownloadManager: ObservableObject {
             self.isPaused = false
 
             if self.didCancel {
-                if self.currentExecutionMode == .directM3U8Recording {
-                    self.transition(to: .verifying, status: "녹화 마무리 중")
-                    let workingDirectory = self.currentOutputDirectory ?? outputDir
-                    self.workerQueue.async {
-                        let resolution = self.finalizeSuccessfulDownload(in: workingDirectory)
-                        DispatchQueue.main.async {
-                            self.applyStoppedRecordingResolution(resolution)
-                        }
-                    }
-                    return
-                }
-                self.transition(to: .canceled, status: "취소됨")
+                self.finishCanceledDownload(in: outputDir)
                 return
             }
 
@@ -675,7 +782,14 @@ final class DownloadManager: ObservableObject {
                 self.transition(to: .verifying, status: "완료 검증 중")
                 let workingDirectory = self.currentOutputDirectory ?? outputDir
                 self.workerQueue.async {
-                    let resolution = self.finalizeSuccessfulDownload(in: workingDirectory)
+                    let promoted = !self.directStreamIsHLS || self.promoteDirectStreamOutput()
+                    let resolution = promoted
+                        ? self.finalizeSuccessfulDownload(in: workingDirectory)
+                        : SuccessfulDownloadResolution(
+                            hasTemporaryArtifacts: true,
+                            resolvedOutput: nil,
+                            validation: nil
+                        )
                     DispatchQueue.main.async {
                         self.applySuccessfulDownloadResolution(resolution)
                     }
@@ -685,9 +799,17 @@ final class DownloadManager: ObservableObject {
 
             let workingDirectory = self.currentOutputDirectory ?? outputDir
             self.workerQueue.async {
-                let hasTemporaryArtifacts = !self.scanTemporaryArtifacts(in: workingDirectory).isEmpty
+                var hasTemporaryArtifacts = !self.scanTemporaryArtifacts(in: workingDirectory).isEmpty
+                if self.directStreamIsHLS {
+                    self.cleanupDirectStreamTemporaryOutput()
+                    hasTemporaryArtifacts = false
+                }
                 let category = self.classifyFailureCategory(exitCode: status)
                 DispatchQueue.main.async {
+                    if self.didCancel {
+                        self.finishCanceledDownload(in: workingDirectory)
+                        return
+                    }
                     self.hasTemporaryArtifacts = hasTemporaryArtifacts
                     self.failureCategory = category
                     self.transition(to: .failed, status: "실패 (코드: \(status))")
@@ -737,6 +859,7 @@ final class DownloadManager: ObservableObject {
         didReuseExistingDownload = didReuseExistingDownload || analysis.reusedExistingDownload
 
         if let outputFilePath = analysis.outputFilePath {
+            observedOutputFiles.insert(outputFilePath.standardizedFileURL)
             if isTemporaryPath(outputFilePath) {
                 lastTemporaryOutputPath = outputFilePath
             } else {
@@ -879,7 +1002,16 @@ final class DownloadManager: ObservableObject {
         }
 
         if line == "progress=continue" {
-            var parts = ["실시간 녹화 중"]
+            var parts = [directStreamIsHLS ? "HLS 세그먼트 다운로드 중" : "실시간 녹화 중"]
+            let progressValue: Double? = directStreamDuration.flatMap { duration in
+                guard let time = ffmpegRecordingProgressState.outTimeText else { return nil }
+                let units = time.split(separator: ":").compactMap { Double($0) }
+                guard units.count == 3 else { return nil }
+                return min((units[0] * 3600 + units[1] * 60 + units[2]) / duration, 0.99)
+            }
+            if let progressValue {
+                parts.append("\(Int(progressValue * 100))%")
+            }
             if let outTimeText = ffmpegRecordingProgressState.outTimeText, !outTimeText.isEmpty {
                 parts.append(outTimeText)
             }
@@ -890,8 +1022,8 @@ final class DownloadManager: ObservableObject {
                 parts.append(speedText)
             }
             return StatusEvent(
-                phase: .recording,
-                progress: nil,
+                phase: directStreamIsHLS ? .downloading : .recording,
+                progress: progressValue,
                 text: parts.joined(separator: " | ")
             )
         }
@@ -900,7 +1032,7 @@ final class DownloadManager: ObservableObject {
             return StatusEvent(
                 phase: .verifying,
                 progress: nil,
-                text: "녹화 마무리 중"
+                text: directStreamIsHLS ? "HLS 세그먼트 병합 및 검증 중" : "녹화 마무리 중"
             )
         }
 
@@ -942,29 +1074,30 @@ final class DownloadManager: ObservableObject {
 
     private func failureUserMessage(for category: DownloadFailureCategory) -> String {
         if currentExecutionMode == .directM3U8Recording {
+            let streamKind = directStreamIsHLS ? "HLS 다운로드" : "실시간 스트리밍 녹화"
             switch category {
             case .toolMissing:
                 return "ffmpeg를 찾지 못했습니다. 설정에서 설치 여부를 확인해 주세요."
             case .invalidURL:
                 return "유효한 스트리밍 URL을 입력해 주세요."
             case .network:
-                return "실시간 스트리밍 녹화가 네트워크 문제로 중단되었습니다. 재접속 설정을 확인해 주세요."
+                return "\(streamKind)이 네트워크 문제로 중단되었습니다. 재접속 설정을 확인해 주세요."
             case .permission:
                 return "저장 폴더 권한 문제로 녹화에 실패했습니다. 다른 폴더를 선택해 보세요."
             case .diskFull:
                 return "디스크 공간이 부족해 녹화에 실패했습니다. 여유 공간을 확보해 주세요."
             case .authOrGeo:
-                return "실시간 스트림 접근이 거부되었습니다. 만료된 주소이거나 필요한 헤더가 부족할 수 있습니다."
+                return "스트림 접근이 거부되었습니다. 만료된 주소이거나 필요한 헤더가 부족할 수 있습니다."
             case .ytdlpOutdatedLikely:
-                return "실시간 스트리밍 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
+                return "\(streamKind)에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
             case .ffmpeg:
-                return "실시간 스트리밍 녹화에 실패했습니다. ffmpeg를 확인해 주세요."
+                return "\(streamKind)에 실패했습니다. ffmpeg를 확인해 주세요."
             case .incompleteFile:
-                return "실시간 녹화 파일이 불완전하게 끝났습니다. ffmpeg 상태를 확인해 주세요."
+                return "\(streamKind) 파일이 불완전하게 끝났습니다. ffmpeg 상태를 확인해 주세요."
             case .execution:
-                return "녹화 프로세스를 실행하지 못했습니다."
+                return "\(streamKind) 프로세스를 실행하지 못했습니다."
             case .unknown:
-                return "실시간 스트리밍 녹화에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
+                return "\(streamKind)에 실패했습니다. 스트림 주소와 ffmpeg 상태를 확인해 주세요."
             }
         }
 
@@ -1203,8 +1336,25 @@ final class DownloadManager: ObservableObject {
                 )
             }
 
+            let requiresVideoAndAudio = directStreamIsHLS
+                && directStreamOptions?.preset != .audioOnlyM4A
+                && fileURL.pathExtension.lowercased() == "mp4"
+
+            if requiresVideoAndAudio && currentToolPaths?.ffprobePath == nil {
+                return DownloadValidationSummary(
+                    isValid: false,
+                    fileSizeBytes: size,
+                    durationSeconds: nil,
+                    message: "파일 검증 실패: HLS MP4 검증에 ffprobe가 필요합니다."
+                )
+            }
+
             if let ffprobeURL = currentToolPaths?.ffprobePath,
-               let ffprobe = validateWithFfprobe(fileURL: fileURL, ffprobeURL: ffprobeURL) {
+               let ffprobe = validateWithFfprobe(
+                    fileURL: fileURL,
+                    ffprobeURL: ffprobeURL,
+                    requireVideoAndAudio: requiresVideoAndAudio
+               ) {
                 if ffprobe.isValid {
                     let sizeText = byteCountFormatter.string(fromByteCount: ffprobe.fileSizeBytes ?? size)
                     let durationText = ffprobe.durationSeconds.map { String(format: "%.1fs", $0) } ?? "-"
@@ -1220,7 +1370,9 @@ final class DownloadManager: ObservableObject {
                     isValid: false,
                     fileSizeBytes: size,
                     durationSeconds: nil,
-                    message: "파일 검증 실패: ffprobe가 파일 메타데이터를 읽지 못했습니다."
+                    message: requiresVideoAndAudio
+                        ? "파일 검증 실패: MP4에 video/audio 스트림이 모두 없습니다."
+                        : "파일 검증 실패: ffprobe가 파일 메타데이터를 읽지 못했습니다."
                 )
             }
 
@@ -1240,12 +1392,16 @@ final class DownloadManager: ObservableObject {
         }
     }
 
-    private func validateWithFfprobe(fileURL: URL, ffprobeURL: URL) -> (isValid: Bool, fileSizeBytes: Int64?, durationSeconds: Double?)? {
+    private func validateWithFfprobe(
+        fileURL: URL,
+        ffprobeURL: URL,
+        requireVideoAndAudio: Bool
+    ) -> (isValid: Bool, fileSizeBytes: Int64?, durationSeconds: Double?)? {
         guard let result = ProcessRunner.runAndCapture(
             executableURL: ffprobeURL,
             arguments: [
                 "-v", "error",
-                "-show_entries", "format=duration,size",
+                "-show_entries", "format=duration,size:stream=codec_type",
                 "-of", "default=noprint_wrappers=1:nokey=0",
                 fileURL.path
             ]
@@ -1260,15 +1416,22 @@ final class DownloadManager: ObservableObject {
         let lines = result.stdout.split(whereSeparator: \.isNewline).map(String.init)
         var durationSeconds: Double?
         var sizeBytes: Int64?
+        var hasVideoStream = false
+        var hasAudioStream = false
         for line in lines {
             if line.hasPrefix("duration=") {
                 durationSeconds = Double(String(line.dropFirst("duration=".count)))
             } else if line.hasPrefix("size=") {
                 sizeBytes = Int64(String(line.dropFirst("size=".count)))
+            } else if line == "codec_type=video" {
+                hasVideoStream = true
+            } else if line == "codec_type=audio" {
+                hasAudioStream = true
             }
         }
 
-        let isValid = (sizeBytes ?? 0) > 0
+        let hasRequiredStreams = !requireVideoAndAudio || (hasVideoStream && hasAudioStream)
+        let isValid = (sizeBytes ?? 0) > 0 && hasRequiredStreams
         return (isValid, sizeBytes, durationSeconds)
     }
 
@@ -1303,6 +1466,11 @@ final class DownloadManager: ObservableObject {
     }
 
     private func applySuccessfulDownloadResolution(_ resolution: SuccessfulDownloadResolution) {
+        if didCancel {
+            finishCanceledDownload(in: currentOutputDirectory, additionalOutput: resolution.resolvedOutput)
+            return
+        }
+
         hasTemporaryArtifacts = resolution.hasTemporaryArtifacts
 
         guard let resolvedOutput = resolution.resolvedOutput else {
@@ -1313,8 +1481,6 @@ final class DownloadManager: ObservableObject {
             return
         }
 
-        outputFilePath = resolvedOutput
-
         if let validation = resolution.validation,
            !validation.isValid {
             failureCategory = .incompleteFile
@@ -1324,38 +1490,137 @@ final class DownloadManager: ObservableObject {
             return
         }
 
+        let savedOutput: URL
+        do {
+            savedOutput = try applyRequestedFilename(to: resolvedOutput)
+        } catch {
+            outputFilePath = resolvedOutput
+            progress = 1
+            failureCategory = nil
+            userMessage = "다운로드 완료: \(resolvedOutput.path)\n파일명 변경 실패: \(error.localizedDescription)"
+            transition(to: .completed, status: "완료 (파일명 변경 실패)")
+            return
+        }
+
+        outputFilePath = savedOutput
         progress = 1
         failureCategory = nil
-        userMessage = "저장됨: \(resolvedOutput.path)"
+        userMessage = "저장됨: \(savedOutput.path)"
         transition(
             to: .completed,
-            status: currentExecutionMode == .directM3U8Recording ? "녹화 완료" : "100% | 완료"
+            status: currentExecutionMode == .directM3U8Recording
+                ? (directStreamIsHLS ? "HLS 다운로드 완료" : "녹화 완료")
+                : "100% | 완료"
         )
     }
 
-    private func applyStoppedRecordingResolution(_ resolution: SuccessfulDownloadResolution) {
-        hasTemporaryArtifacts = resolution.hasTemporaryArtifacts
-
-        guard let resolvedOutput = resolution.resolvedOutput else {
-            transition(to: .canceled, status: "취소됨")
-            return
+    private func applyRequestedFilename(to outputURL: URL) throws -> URL {
+        guard let baseName = Self.sanitizedBaseName(
+            requestedFilename,
+            originalExtension: outputURL.pathExtension
+        ) else {
+            return outputURL
         }
 
-        outputFilePath = resolvedOutput
+        let directory = outputURL.deletingLastPathComponent()
+        var destination = directory.appendingPathComponent(baseName)
+            .appendingPathExtension(outputURL.pathExtension)
+        guard destination != outputURL else { return outputURL }
 
-        if let validation = resolution.validation,
-           !validation.isValid {
-            failureCategory = .incompleteFile
-            transition(to: .failed, status: "실패 (녹화 검증)")
-            userMessage = "녹화된 파일 검증에 실패했습니다. ffmpeg 상태를 확인해 주세요."
-            appendFailureGuidance(for: .incompleteFile)
-            return
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent("\(baseName)-\(suffix)")
+                .appendingPathExtension(outputURL.pathExtension)
+            suffix += 1
+        }
+        try FileManager.default.moveItem(at: outputURL, to: destination)
+        return destination
+    }
+
+    static func sanitizedBaseName(_ rawName: String, originalExtension: String) -> String? {
+        var name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+
+        let mediaExtensions: Set<String> = ["mp4", "m4a", "mkv", "mov", "webm", "mp3", "aac", "flv", "avi"]
+        let typedExtension = (name as NSString).pathExtension.lowercased()
+        if mediaExtensions.contains(typedExtension) || typedExtension == originalExtension.lowercased() {
+            name = (name as NSString).deletingPathExtension
         }
 
-        progress = 1
-        failureCategory = nil
-        userMessage = "저장됨: \(resolvedOutput.path)"
-        transition(to: .completed, status: "녹화 완료")
+        let invalidCharacters = CharacterSet(charactersIn: "/:\\?%*|\"<>\n\r\t")
+        let sanitized = name.components(separatedBy: invalidCharacters)
+            .joined(separator: "-")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+        return sanitized.isEmpty ? nil : sanitized
+    }
+
+    private func finishCanceledDownload(in outputDir: URL?, additionalOutput: URL? = nil) {
+        transition(to: .canceled, status: "미완성 파일 정리 중")
+        let knownOutputs = observedOutputFiles.union([additionalOutput].compactMap { $0?.standardizedFileURL })
+        let initialFiles = initialOutputFiles
+        let temporaryOutput = directStreamTemporaryOutputURL
+        workerQueue.async {
+            let failures = Self.removeCanceledOutputFiles(
+                in: outputDir,
+                knownOutputs: knownOutputs,
+                initialFiles: initialFiles,
+                temporaryOutput: temporaryOutput
+            )
+            DispatchQueue.main.async {
+                self.outputFilePath = nil
+                self.hasTemporaryArtifacts = !failures.isEmpty
+                self.userMessage = failures.isEmpty
+                    ? nil
+                    : "미완성 파일을 삭제하지 못했습니다: \(failures.map(\.lastPathComponent).joined(separator: ", "))"
+                self.transition(to: .canceled, status: failures.isEmpty ? "취소됨 (파일 삭제)" : "취소됨 (파일 정리 실패)")
+            }
+        }
+    }
+
+    static func removeCanceledOutputFiles(
+        in outputDir: URL?,
+        knownOutputs: Set<URL>,
+        initialFiles: Set<URL>,
+        temporaryOutput: URL?
+    ) -> [URL] {
+        guard let outputDir else { return [] }
+        let directory = outputDir.standardizedFileURL
+        var targets = Set<URL>()
+
+        for output in knownOutputs where output.deletingLastPathComponent() == directory {
+            targets.insert(output)
+            targets.insert(URL(fileURLWithPath: output.path + ".part"))
+            targets.insert(URL(fileURLWithPath: output.path + ".ytdl"))
+            targets.insert(URL(fileURLWithPath: output.path + ".part.ytdl"))
+        }
+        if let temporaryOutput, temporaryOutput.deletingLastPathComponent().standardizedFileURL == directory {
+            targets.insert(temporaryOutput.standardizedFileURL)
+        }
+
+        let fragmentPrefixes = knownOutputs
+            .filter { $0.deletingLastPathComponent() == directory }
+            .map { $0.lastPathComponent + ".part-Frag" }
+        if let entries = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) {
+            for entry in entries where fragmentPrefixes.contains(where: { entry.lastPathComponent.hasPrefix($0) })
+                && DownloadLineHeuristics.isTemporaryFilename(entry.lastPathComponent) {
+                targets.insert(entry.standardizedFileURL)
+            }
+        }
+
+        var failures: [URL] = []
+        for target in targets where !initialFiles.contains(target) {
+            guard FileManager.default.fileExists(atPath: target.path) else { continue }
+            do {
+                try FileManager.default.removeItem(at: target)
+            } catch {
+                failures.append(target)
+            }
+        }
+        return failures
     }
 }
 

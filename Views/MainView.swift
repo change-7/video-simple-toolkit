@@ -6,10 +6,12 @@ import AVFoundation
 private final class DownloadTaskItem: Identifiable {
     let id = UUID()
     let url: String
+    let title: String?
     let manager: DownloadManager
 
-    init(url: String, manager: DownloadManager = DownloadManager()) {
+    init(url: String, title: String? = nil, manager: DownloadManager = DownloadManager()) {
         self.url = url
+        self.title = title
         self.manager = manager
     }
 }
@@ -23,6 +25,8 @@ private struct ParsedURLSummary {
 private struct DownloadLaunchPlan {
     let url: String
     let options: DownloadOptions
+    var title: String? = nil
+    var sourceURL: String? = nil
 }
 
 private struct DownloadPlanBuildResult {
@@ -2096,6 +2100,24 @@ struct SubtitleVideoRoundedCue {
     let text: String
 }
 
+enum SubtitleVideoRenderMetrics {
+    static let playResX: CGFloat = 1280
+    static let playResY: CGFloat = 720
+    static let previewPlayResY: CGFloat = 288
+    static let minimumBottomMargin: CGFloat = 25
+    static let previewBottomMargin: CGFloat = 10
+
+    static func outputFontSize(from previewFontSize: Double) -> CGFloat {
+        let scale = playResY / previewPlayResY
+        return CGFloat(max(8, Int((previewFontSize * Double(scale)).rounded())))
+    }
+
+    static func scaledFontSize(fontSize: Double, previewHeight: CGFloat) -> CGFloat {
+        let renderedSize = CGFloat(fontSize) * max(previewHeight, 0) / previewPlayResY
+        return max(5, renderedSize)
+    }
+}
+
 enum SubtitleVideoRoundedASSGenerator {
     private struct Event {
         let cue: SubtitleVideoRoundedCue
@@ -2117,7 +2139,7 @@ enum SubtitleVideoRoundedASSGenerator {
         guard !cues.isEmpty else { return nil }
 
         let content = makeASSContent(
-            events: cues.map { Event(cue: $0, fontSize: CGFloat(max(8, Int(fontSize.rounded())))) },
+            events: cues.map { Event(cue: $0, fontSize: SubtitleVideoRenderMetrics.outputFontSize(from: fontSize)) },
             backgroundOpacity: backgroundOpacity
         )
         let outputURL = outputDirectory.appendingPathComponent("rounded-subtitles.ass")
@@ -2133,16 +2155,16 @@ enum SubtitleVideoRoundedASSGenerator {
         backgroundOpacity: Double
     ) -> String {
         makeASSContent(
-            events: cues.map { Event(cue: $0, fontSize: CGFloat(max(8, Int(fontSize.rounded())))) },
+            events: cues.map { Event(cue: $0, fontSize: SubtitleVideoRenderMetrics.outputFontSize(from: fontSize)) },
             backgroundOpacity: backgroundOpacity
         )
     }
 
     private static func makeASSContent(events: [Event], backgroundOpacity: Double) -> String {
-        let width = 1280
-        let height = 720
-        let fontSize = events.first?.fontSize ?? 16
-        let bottomMargin = max(25, fontSize * 1.5)
+        let width = Int(SubtitleVideoRenderMetrics.playResX)
+        let height = Int(SubtitleVideoRenderMetrics.playResY)
+        let fontSize = events.first?.fontSize ?? SubtitleVideoRenderMetrics.outputFontSize(from: 16)
+        let bottomMargin = max(SubtitleVideoRenderMetrics.minimumBottomMargin, fontSize * 1.5)
         let clampedOpacity = min(max(backgroundOpacity, 0), 1)
         let backgroundAlpha = alphaHex(for: clampedOpacity)
         var lines = [
@@ -2807,6 +2829,7 @@ struct MainView: View {
     @State private var alertMessage: String = ""
     @State private var showAlert = false
     @State private var isSettingsPresented = false
+    @State private var discoveryPage: WebVideoDiscoveryRequest?
     @State private var isPreparingDownloads = false
     @State private var isNormalizingURLText = false
     @State private var taskItems: [DownloadTaskItem] = []
@@ -2837,7 +2860,10 @@ struct MainView: View {
     @State private var subtitlePreviewVolume: Double = 0.7
     @State private var subtitlePreviewAspectRatio: CGFloat = 16.0 / 9.0
 
-    private let defaultSubtitlePreviewMetrics = SubtitlePreviewMetrics(playResY: 288, marginV: 10)
+    private let defaultSubtitlePreviewMetrics = SubtitlePreviewMetrics(
+        playResY: SubtitleVideoRenderMetrics.previewPlayResY,
+        marginV: SubtitleVideoRenderMetrics.previewBottomMargin
+    )
     private static let defaultSubtitlePreviewAspectRatio: CGFloat = 16.0 / 9.0
 
     private var selectedPreset: DownloadPreset {
@@ -2905,7 +2931,14 @@ struct MainView: View {
         return !urls.isEmpty && urls.allSatisfy(isLikelyDirectStreamCaptureCandidate)
     }
 
+    private var hasHLSDownloadTarget: Bool {
+        parsedURLSummary.deduplicatedValidURLs.contains(where: StreamURLResolver.isHLSURL)
+    }
+
     private var downloadToolsReady: Bool {
+        if hasHLSDownloadTarget && !(toolManager.status.ffprobe?.isInstalled ?? false) {
+            return false
+        }
         if allDownloadTargetsCanAttemptDirectCapture {
             return toolManager.status.ffmpeg.isInstalled
         }
@@ -3589,6 +3622,16 @@ struct MainView: View {
                 .environmentObject(toolManager)
                 .frame(minWidth: 720, minHeight: 520)
         }
+        .sheet(item: $discoveryPage) { request in
+            WebVideoDiscoveryView(
+                pageURL: request.url,
+                ffprobeURL: toolManager.status.ffprobe?.path.map { URL(fileURLWithPath: $0) },
+                ffmpegURL: toolManager.status.ffmpeg.path.map { URL(fileURLWithPath: $0) },
+                onDownload: { candidate, title in
+                    startDiscoveredDownload(candidate, title: title)
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -3809,6 +3852,16 @@ struct MainView: View {
 
                     Spacer()
 
+                    Button("페이지에서 찾기") {
+                        if let text = parsedURLSummary.deduplicatedValidURLs.first,
+                           let url = URL(string: text) {
+                            discoveryPage = WebVideoDiscoveryRequest(url: url)
+                        }
+                    }
+                    .disabled(parsedURLSummary.deduplicatedValidURLs.count != 1 ||
+                              !(["http", "https"].contains(URLComponents(string: parsedURLSummary.deduplicatedValidURLs.first ?? "")?.scheme?.lowercased() ?? "")))
+                    .instantHelp("웹페이지에서 영상을 재생한 뒤 실제 영상 주소를 찾아 확인합니다. URL을 하나만 입력해 주세요.")
+
                     Button {
                         startDownloads()
                     } label: {
@@ -3832,7 +3885,13 @@ struct MainView: View {
         outputFolderSection
 
         if !downloadToolsReady {
-            Text(allDownloadTargetsCanAttemptDirectCapture ? "직접 스트리밍 녹화는 ffmpeg가 필요합니다." : "다운로드는 yt-dlp와 ffmpeg가 필요합니다.")
+            Text(
+                hasHLSDownloadTarget && !(toolManager.status.ffprobe?.isInstalled ?? false)
+                    ? "HLS MP4 완료 검증에는 ffprobe가 필요합니다."
+                    : (allDownloadTargetsCanAttemptDirectCapture
+                        ? "직접 스트리밍 다운로드는 ffmpeg가 필요합니다."
+                        : "다운로드는 yt-dlp와 ffmpeg가 필요합니다.")
+            )
                 .foregroundStyle(.orange)
                 .font(.callout)
         }
@@ -4369,7 +4428,7 @@ struct MainView: View {
                         value: $subtitlePreviewFontSize,
                         range: 10...36,
                         valueText: "\(Int(subtitlePreviewFontSize))",
-                        help: "ffmpeg 자막 스타일의 FontSize 값입니다. 미리보기는 실제 출력 기준에 맞춰 축소 표시됩니다."
+                        help: "ffmpeg 자막 스타일의 FontSize 값입니다. 기존의 큰 미리보기 기준으로 최종 영상에 반영됩니다."
                     )
 
                     subtitleStyleControl(
@@ -4559,20 +4618,14 @@ struct MainView: View {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
 
-        let pattern = #"(?i)(?:https?|rtsp|rtmp|rtmps|srt|udp)://[^\s<>\"']+"#
+        let pattern = #"(?i)[a-z][a-z0-9+.-]*:(?://)?[^\s<>\"']+"#
         guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
 
         let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
         return expression.matches(in: trimmed, range: range).compactMap { match in
             guard let swiftRange = Range(match.range, in: trimmed) else { return nil }
             let candidate = String(trimmed[swiftRange])
-            guard let components = URLComponents(string: candidate),
-                  let scheme = components.scheme?.lowercased(),
-                  ["http", "https", "rtsp", "rtmp", "rtmps", "srt", "udp"].contains(scheme),
-                  components.host != nil else {
-                return nil
-            }
-            return candidate
+            return StreamURLResolver.normalizedInputURL(from: candidate)
         }
     }
 
@@ -4892,6 +4945,11 @@ struct MainView: View {
     }
 
     private func startDownloads() {
+        if hasHLSDownloadTarget && !(toolManager.status.ffprobe?.isInstalled ?? false) {
+            showAlert(message: "HLS MP4 완료 검증에는 ffprobe가 필요합니다. 설정에서 ffprobe 설치 상태를 확인해 주세요.")
+            return
+        }
+
         guard downloadToolsReady else {
             showAlert(message: allDownloadTargetsCanAttemptDirectCapture ? "ffmpeg를 찾을 수 없습니다. 설정 버튼에서 설치 안내를 확인해 주세요." : "yt-dlp/ffmpeg를 찾을 수 없습니다. 설정 버튼에서 설치 안내를 확인해 주세요.")
             return
@@ -4955,7 +5013,7 @@ struct MainView: View {
                     return
                 }
 
-                let newTasks = buildResult.plans.map { DownloadTaskItem(url: $0.url) }
+                let newTasks = buildResult.plans.map { DownloadTaskItem(url: $0.url, title: $0.title) }
                 self.taskItems.append(contentsOf: newTasks)
 
                 for (task, plan) in zip(newTasks, buildResult.plans) {
@@ -4963,7 +5021,9 @@ struct MainView: View {
                         url: plan.url,
                         outputDir: outputDir,
                         toolPaths: toolPaths,
-                        options: plan.options
+                        options: plan.options,
+                        suggestedFilename: plan.title,
+                        refererURL: plan.sourceURL
                     )
                 }
 
@@ -4988,6 +5048,47 @@ struct MainView: View {
                 }
             }
         }
+    }
+
+    private func startDiscoveredDownload(_ candidate: WebVideoCandidate, title: String?) -> Bool {
+        guard let outputDir = selectedOutputDirectory else {
+            showAlert(message: "저장 폴더를 먼저 선택해 주세요.")
+            return false
+        }
+        guard let ffmpegPath = toolManager.status.ffmpeg.path else {
+            showAlert(message: "ffmpeg를 찾을 수 없습니다. 설정에서 설치 상태를 확인해 주세요.")
+            return false
+        }
+        if StreamURLResolver.isHLSURL(candidate.url), !(toolManager.status.ffprobe?.isInstalled ?? false) {
+            showAlert(message: "HLS MP4 완료 검증에는 ffprobe가 필요합니다.")
+            return false
+        }
+
+        let ffmpegURL = URL(fileURLWithPath: ffmpegPath)
+        let toolPaths = ToolPaths(
+            ytDlpPath: toolManager.status.ytDlp.path.map { URL(fileURLWithPath: $0) } ?? ffmpegURL,
+            ffmpegPath: ffmpegURL,
+            ffprobePath: toolManager.status.ffprobe?.path.map { URL(fileURLWithPath: $0) }
+        )
+        let options = DownloadOptions(
+            preset: selectedPreset,
+            conflictPolicy: selectedConflictPolicy,
+            filenameTemplate: defaultDownloadFilenameTemplate,
+            forceDirectStreamCapture: true,
+            hlsAutoReconnectEnabled: StreamURLResolver.isHLSURL(candidate.url) && hlsAutoReconnectEnabled,
+            hlsReconnectFailTimeoutSeconds: min(max(hlsReconnectFailTimeoutSeconds, 15), 1800)
+        )
+        let task = DownloadTaskItem(url: candidate.url, title: title)
+        taskItems.append(task)
+        task.manager.startDownload(
+            url: candidate.url,
+            outputDir: outputDir,
+            toolPaths: toolPaths,
+            options: options,
+            suggestedFilename: title,
+            refererURL: candidate.refererURL
+        )
+        return true
     }
 
     private func startVideoMerge() {
@@ -5334,16 +5435,32 @@ struct MainView: View {
                 continue
             }
 
-            guard let ytDlpURL else {
+            let identity = ytDlpURL.flatMap { fetchYtDlpIdentity(url: url, ytDlpURL: $0) }
+            if identity == nil,
+               let page = fetchPageVideo(url: url),
+               let videoURL = page.videoURL,
+               canRecordWithDirectStreamCapture(url: videoURL, ffmpegURL: ffmpegURL, ffprobeURL: ffprobeURL) {
+                plans.append(DownloadLaunchPlan(
+                    url: videoURL,
+                    options: DownloadOptions(
+                        preset: baseOptions.preset,
+                        conflictPolicy: baseOptions.conflictPolicy,
+                        filenameTemplate: baseOptions.filenameTemplate,
+                        forceDirectStreamCapture: true,
+                        hlsAutoReconnectEnabled: baseOptions.hlsAutoReconnectEnabled,
+                        hlsReconnectFailTimeoutSeconds: baseOptions.hlsReconnectFailTimeoutSeconds
+                    ),
+                    title: page.title,
+                    sourceURL: url
+                ))
+                continue
+            }
+            guard ytDlpURL != nil else {
                 skippedCount += 1
                 continue
             }
-
             ytDlpTargets.append(url)
-            identities[url] = fetchYtDlpIdentity(
-                url: url,
-                ytDlpURL: ytDlpURL
-            )
+            identities[url] = identity
         }
 
         let failedIdentityLookupExists = ytDlpTargets.contains { identities[$0] == nil }
@@ -5371,13 +5488,14 @@ struct MainView: View {
                     forceDirectStreamCapture: false,
                     hlsAutoReconnectEnabled: baseOptions.hlsAutoReconnectEnabled,
                     hlsReconnectFailTimeoutSeconds: baseOptions.hlsReconnectFailTimeoutSeconds
-                )
+                ),
+                title: identities[url]?.title
             )
         }
 
         plans.append(contentsOf: ytDlpPlans)
         let orderedPlans = plans.sorted { lhs, rhs in
-            targets.firstIndex(of: lhs.url) ?? Int.max < targets.firstIndex(of: rhs.url) ?? Int.max
+            targets.firstIndex(of: lhs.sourceURL ?? lhs.url) ?? Int.max < targets.firstIndex(of: rhs.sourceURL ?? rhs.url) ?? Int.max
         }
 
         return DownloadPlanBuildResult(
@@ -5419,33 +5537,39 @@ struct MainView: View {
         return YtDlpVideoIdentity(title: title, videoID: videoID)
     }
 
-    private func isLikelyDirectM3U8URL(_ url: String) -> Bool {
-        let lowered = url.lowercased()
-        if lowered.contains(".m3u8") {
-            return true
-        }
-
-        guard let components = URLComponents(string: url) else {
-            return false
-        }
-
-        if components.path.lowercased().contains(".m3u8") {
-            return true
-        }
-
-        guard let items = components.queryItems else {
-            return false
-        }
-
-        for item in items {
-            let name = item.name.lowercased()
-            let value = (item.value ?? "").lowercased()
-            if name.contains("m3u8") || value.contains(".m3u8") || value == "m3u8" {
-                return true
+    private func fetchPageVideo(url: String) -> (title: String?, videoURL: String?)? {
+        guard let pageURL = URL(string: url), ["http", "https"].contains(pageURL.scheme?.lowercased() ?? "") else { return nil }
+        var request = URLRequest(url: pageURL)
+        request.timeoutInterval = 10
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+        let semaphore = DispatchSemaphore(value: 0)
+        var html: String?
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            if let data, data.count <= 2_000_000,
+               (response as? HTTPURLResponse)?.mimeType?.lowercased().contains("html") == true {
+                html = String(data: data, encoding: .utf8)
             }
+            semaphore.signal()
+        }.resume()
+        guard semaphore.wait(timeout: .now() + 11) == .success, let html else { return nil }
+
+        func firstMatch(_ pattern: String) -> String? {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]),
+                  let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+                  let range = Range(match.range(at: 1), in: html) else { return nil }
+            return String(html[range]).replacingOccurrences(of: "&amp;", with: "&")
         }
 
-        return false
+        let title = firstMatch("<title[^>]*>\\s*([^<]+)")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = firstMatch("<(?:video|source)[^>]+src=[\"']([^\"']+)")
+            ?? firstMatch("<meta[^>]+(?:property|name)=[\"']og:video(?::url)?[\"'][^>]+content=[\"']([^\"']+)")
+            ?? firstMatch("[\"'](https?://[^\"'<>\\s]+\\.m3u8(?:\\?[^\"'<>\\s]*)?)[\"']")
+        let videoURL = candidate.flatMap { URL(string: $0, relativeTo: pageURL)?.absoluteURL.absoluteString }
+        return (title, videoURL)
+    }
+
+    private func isLikelyDirectM3U8URL(_ url: String) -> Bool {
+        StreamURLResolver.isHLSURL(url)
     }
 
     private func isLikelyYouTubeURL(_ url: String) -> Bool {
@@ -5654,23 +5778,30 @@ private struct DownloadTaskRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Text(task.url)
+                Text(task.title ?? task.url)
                     .font(.caption)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 8)
-
-                Text(manager.phase.displayName)
-                    .font(.caption2.weight(.semibold))
+                Text(manager.statusText)
+                    .font(.caption2)
                     .foregroundStyle(phaseColor)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 220, alignment: .trailing)
+                    .instantHelp(manager.statusText)
             }
 
             HStack(spacing: 8) {
-                ProgressView(value: manager.progress, total: 1)
+                if manager.isProgressIndeterminate && manager.isDownloading {
+                    ProgressView()
+                } else {
+                    ProgressView(value: manager.progress, total: 1)
+                }
 
                 if manager.isDownloading {
                     Button(manager.isPaused ? "재개" : "일시정지") {
@@ -5690,11 +5821,20 @@ private struct DownloadTaskRow: View {
                 }
             }
 
-            Text(manager.statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if manager.isDownloading && manager.phase != .verifying && manager.phase != .canceled {
+                HStack(spacing: 8) {
+                    TextField("완료 후 파일명", text: $manager.requestedFilename)
+                        .textFieldStyle(.roundedBorder)
+                        .instantHelp("확장자는 그대로 두고, 다운로드 완료 후 파일명만 변경합니다.")
+
+                    if let fileExtension = manager.outputFilePath?.pathExtension,
+                       !fileExtension.isEmpty {
+                        Text(".\(fileExtension)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
 
             if let message = manager.userMessage, !message.isEmpty {
                 Text(message)

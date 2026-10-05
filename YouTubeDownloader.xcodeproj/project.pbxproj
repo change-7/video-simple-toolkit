@@ -33,6 +33,8 @@
 		D9D8E805A0FDF54B112DDB6A /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB960C8D9768CDC0504FC591 /* MainView.swift */; };
 		E5B67811361EA9DD0C688996 /* DownloadLineHeuristicsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9627A05ABC342FD69D0DC366 /* DownloadLineHeuristicsTests.swift */; };
 		F68DF40A256D10319EC47A48 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB960C8D9768CDC0504FC591 /* MainView.swift */; };
+		A88495BF942C4DAEB10A5070 /* WebVideoDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88495BF942C4DAEB10A5072 /* WebVideoDiscoveryView.swift */; };
+		A88495BF942C4DAEB10A5071 /* WebVideoDiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88495BF942C4DAEB10A5072 /* WebVideoDiscoveryView.swift */; };
 		FA3B889CEF2B49A27DE43934 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 729F1EA69FB7AB8BA73121FE /* DownloadManager.swift */; };
 /* End PBXBuildFile section */
 
@@ -65,6 +67,7 @@
 		BE9BF59F7AB86612953BD022 /* YouTubeDownloader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = YouTubeDownloader.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC40281F0484EDA299AC0322 /* ToolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolModels.swift; sourceTree = "<group>"; };
 		DB960C8D9768CDC0504FC591 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		A88495BF942C4DAEB10A5072 /* WebVideoDiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebVideoDiscoveryView.swift; sourceTree = "<group>"; };
 		EC9844325009D1A7D7B1044E /* YouTubeDownloaderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YouTubeDownloaderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F279ADE6D2CE49C5F439F625 /* ToolManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -163,6 +166,7 @@
 				6F519A70C792AF6B0FA1565B /* CopyButton.swift */,
 				9DBE6F8A9F9D4C13AD0BA4CA /* InstantHelp.swift */,
 				DB960C8D9768CDC0504FC591 /* MainView.swift */,
+				A88495BF942C4DAEB10A5072 /* WebVideoDiscoveryView.swift */,
 				8CDA2997B37DEE239BD6DE9E /* ToolsView.swift */,
 			);
 			path = Views;
@@ -303,6 +307,7 @@
 				FA3B889CEF2B49A27DE43934 /* DownloadManager.swift in Sources */,
 				4A3C43A15EDB43D3983F1FB8 /* InstantHelp.swift in Sources */,
 				F68DF40A256D10319EC47A48 /* MainView.swift in Sources */,
+				A88495BF942C4DAEB10A5070 /* WebVideoDiscoveryView.swift in Sources */,
 				1B0B513BCFD8142D6C6EC48E /* ProcessRunner.swift in Sources */,
 				59CC58B78A0C9BAB2A38ADD2 /* ToolManager.swift in Sources */,
 				C1A22A1E0422D7F68CF31147 /* ToolModels.swift in Sources */,
@@ -324,6 +329,7 @@
 				A87337A209AE49563CA7668F /* EditorWorkspaceView.swift in Sources */,
 				B090A33979634E9C92B4E58F /* InstantHelp.swift in Sources */,
 				D9D8E805A0FDF54B112DDB6A /* MainView.swift in Sources */,
+				A88495BF942C4DAEB10A5071 /* WebVideoDiscoveryView.swift in Sources */,
 				AE04728F4742D65B2C53F72F /* ProcessRunner.swift in Sources */,
 				C18CCA7C3DE2D1E723CBE6F4 /* ToolManager.swift in Sources */,
 				04A10986B701FDB61B135B1E /* ToolModels.swift in Sources */,
