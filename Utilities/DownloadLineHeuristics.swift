@@ -186,3 +186,57 @@ enum DownloadLineHeuristics {
         return String(line[swiftRange]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+enum StreamURLResolver {
+    private static let supportedSchemes: Set<String> = [
+        "http", "https", "rtsp", "rtmp", "rtmps", "srt", "udp"
+    ]
+
+    static func normalizedInputURL(from rawValue: String) -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        if let hlsURL = hlsURLInFragment(of: trimmed) {
+            return hlsURL
+        }
+
+        guard let components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              supportedSchemes.contains(scheme),
+              components.host != nil else {
+            return nil
+        }
+
+        return trimmed
+    }
+
+    private static func hlsURLInFragment(of rawValue: String) -> String? {
+        guard let hashIndex = rawValue.firstIndex(of: "#") else { return nil }
+
+        let rawFragment = String(rawValue[rawValue.index(after: hashIndex)...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidates = [rawFragment, rawFragment.removingPercentEncoding]
+
+        return candidates
+            .compactMap { $0 }
+            .first(where: isDirectHTTPHLSURL)
+    }
+
+    private static func isDirectHTTPHLSURL(_ rawValue: String) -> Bool {
+        guard let components = URLComponents(string: rawValue),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              components.host != nil else {
+            return false
+        }
+
+        return components.path.lowercased().hasSuffix(".m3u8")
+    }
+
+    static func isHLSURL(_ rawValue: String) -> Bool {
+        guard let components = URLComponents(string: rawValue) else {
+            return false
+        }
+        return components.path.lowercased().hasSuffix(".m3u8")
+    }
+}

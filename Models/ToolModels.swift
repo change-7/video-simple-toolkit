@@ -10,6 +10,8 @@ enum SettingsKeys {
     static let mergeBehavior = "settings.merge.behavior"
     static let hlsAutoReconnectEnabled = "settings.hls.autoReconnectEnabled"
     static let hlsReconnectFailTimeoutSeconds = "settings.hls.reconnectFailTimeoutSeconds"
+    static let editorAutoImportDownloadedMedia = "settings.editor.autoImportDownloadedMedia"
+    static let hoverHelpEnabled = "settings.ui.hoverHelpEnabled"
 }
 
 enum DownloadPreset: String, CaseIterable, Identifiable {
@@ -17,13 +19,32 @@ enum DownloadPreset: String, CaseIterable, Identifiable {
     case bestQualityMP4 = "best_quality_mp4"
     case audioOnlyM4A = "audio_only_m4a"
 
+    static let userSelectableModes: [DownloadPreset] = [.bestQualityMP4, .audioOnlyM4A]
+
+    static func userSelectableMode(rawValue: String) -> DownloadPreset {
+        switch DownloadPreset(rawValue: rawValue) {
+        case .audioOnlyM4A:
+            return .audioOnlyM4A
+        case .bestQualityMP4, .macCompatibleMP4, nil:
+            return .bestQualityMP4
+        }
+    }
+
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .macCompatibleMP4: return "맥 호환 MP4"
-        case .bestQualityMP4: return "최고 화질 MP4"
-        case .audioOnlyM4A: return "오디오만 (M4A)"
+        case .bestQualityMP4: return "원본 영상 MP4"
+        case .audioOnlyM4A: return "음성 M4A"
+        }
+    }
+
+    var compactTitle: String {
+        switch self {
+        case .macCompatibleMP4: return "맥 호환"
+        case .bestQualityMP4: return "원본 영상"
+        case .audioOnlyM4A: return "음성"
         }
     }
 
@@ -32,9 +53,9 @@ enum DownloadPreset: String, CaseIterable, Identifiable {
         case .macCompatibleMP4:
             return "QuickTime/미리보기 호환 우선"
         case .bestQualityMP4:
-            return "최고 화질 우선 (호환성 낮을 수 있음)"
+            return "가능한 최고 원본 화질 우선"
         case .audioOnlyM4A:
-            return "음원만 저장"
+            return "영상에서 음성만 바로 추출/변환"
         }
     }
 }
@@ -133,7 +154,7 @@ struct DownloadOptions {
     let hlsReconnectFailTimeoutSeconds: Int
 
     static let `default` = DownloadOptions(
-        preset: .macCompatibleMP4,
+        preset: .bestQualityMP4,
         conflictPolicy: .autoRename,
         filenameTemplate: "%(title)s.%(ext)s",
         forceDirectStreamCapture: false,
